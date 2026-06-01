@@ -1,0 +1,19 @@
+id = "net.mallard.discworld-chat"
+name = "Discworld Chat"
+version = "0.1.0"
+language = "lua"
+entry = "src/main.lua"
+mallard_api_version = "1.0"
+minimum_app_version = "0.0.1"
+authors = ["mallard examples"]
+license = "MIT"
+
+[worlds]
+match = ["discworld.starturtle.net:*"]
+
+[panels.chat]
+title              = "Chat"
+entry              = "ui/chat.html"
+default_dock       = "below"
+default_dock_after = "output"
+default_size       = { width = 800, height = 200 }
