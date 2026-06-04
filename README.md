@@ -3,12 +3,6 @@
 A Mallard plugin for Discworld MUD. Captures tells, group says,
 and public channels into a 4-tab panel: `All / Tells / Group / Channels`.
 
-## Install (dev)
-
-```sh
-bash scripts/reinstall.sh
-```
-
 ## What it does
 
 Triggers (ported from Quow's QuowMinimap.xml) match:
