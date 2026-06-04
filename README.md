@@ -1,6 +1,6 @@
 # Discworld Chat
 
-A Mallard flagship plugin for Discworld MUD. Captures tells, group says,
+A Mallard plugin for Discworld MUD. Captures tells, group says,
 and public channels into a 4-tab panel: `All / Tells / Group / Channels`.
 
 ## Install (dev)
@@ -27,7 +27,3 @@ replayed on Mallard restart.
 ## Auto-enable
 
 `[worlds] match = ["discworld.starturtle.net:*"]`.
-
-## Design
-
-Full design lives in the [Mallard repo](https://github.com/wizardquack/mallard) under `docs/superpowers/specs/2026-05-18-discworld-flagships-vitals-chat-design.md`.
