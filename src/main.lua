@@ -195,6 +195,15 @@ end)
 -- immediately-following line whenever a marker has just been seen.
 local htell_replay_pending = false
 
+-- Chime debounce: leading-edge throttle. First chime in a burst plays
+-- immediately, subsequent ones within CHIME_DEBOUNCE_S are suppressed.
+-- os.time() is seconds-precision (no millisecond wall clock available
+-- in the plugin Lua sandbox), so the floor of the actual gap can be
+-- one second smaller than the constant — set to 2s so the effective
+-- minimum gap is ≥1s.
+local CHIME_DEBOUNCE_S = 2
+local last_chime_ts = 0
+
 -- Returns true if the line should be gagged from the main output pane.
 -- Also posts to the panel (and persists) when the relevant `listen` is on.
 local function route_line(line_text)
@@ -253,7 +262,13 @@ local function route_line(line_text)
     }
     panel:post("line", payload)
     persist(payload)
-    if should_chime then mud.play_sound("mallard:chime-high") end
+    if should_chime then
+      local now = os.time()
+      if now - last_chime_ts >= CHIME_DEBOUNCE_S then
+        mud.play_sound("mallard:chime-high")
+        last_chime_ts = now
+      end
+    end
   end
 
   return gag
