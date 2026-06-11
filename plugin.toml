@@ -10,10 +10,10 @@ authors = ["Wizard Quack"]
 license = "MIT"
 
 [permissions]
-# Read-only access to the capname leaf so route_line can detect the
-# player's own channel utterances (Discworld echoes them as
-# "[ChannelName] CharName: ..." rather than with a "You " prefix).
-gmcp_access = ["char.info.capname"]
+# Subscribe to Char.Info so route_line can detect the player's own
+# channel utterances (Discworld echoes them as "[ChannelName] CharName:
+# ..." rather than with a "You " prefix).
+gmcp_access = ["char.info"]
 
 [worlds]
 match = ["discworld.starturtle.net:*"]

@@ -204,6 +204,18 @@ local htell_replay_pending = false
 local CHIME_DEBOUNCE_S = 2
 local last_chime_ts = 0
 
+-- Cached character name from GMCP Char.Info, used to detect the user's
+-- own channel utterances (Discworld echoes them as "[Channel] CapName:
+-- ..." rather than "[Channel] You ..."). Populated on every Char.Info
+-- push — gmcp.on lowercases the prefix at registration, so this works
+-- regardless of the server's wire case for the package name.
+local self_capname = nil
+gmcp.on("char.info", function(_, data)
+  if type(data) == "table" and type(data.capname) == "string" then
+    self_capname = data.capname
+  end
+end)
+
 -- Returns true if the line should be gagged from the main output pane.
 -- Also posts to the panel (and persists) when the relevant `listen` is on.
 local function route_line(line_text)
@@ -217,21 +229,18 @@ local function route_line(line_text)
 
   -- Discworld echoes the user's own channel talk in two shapes: the
   -- legacy "[ChannelName] You say: ..." (caught by the classifier's
-  -- "You " body check) and the modern "[ChannelName] CharName: ..."
+  -- "You " body check) and the modern "[ChannelName] CapName: ..."
   -- form (which classifier can't recognize without the player's name).
-  -- gmcp.get reads the latest Char.Info.capname out of the world's
-  -- GMCP mirror; falls through silently when the server hasn't yet
-  -- sent the frame.
-  if routing.incoming and routing.channel then
-    local _, capname = pcall(gmcp.get, "Char.Info.capname")
-    if type(capname) == "string" and capname ~= "" then
-      local body_start = #routing.channel + 4
-      local end_idx = body_start + #capname - 1
-      if line_text:sub(body_start, end_idx) == capname then
-        local next_char = line_text:sub(end_idx + 1, end_idx + 1)
-        if next_char == ":" or next_char == " " then
-          routing.incoming = false
-        end
+  -- `self_capname` is populated by the gmcp.on subscription above; it
+  -- stays nil until the first Char.Info frame, after which we override
+  -- routing.incoming when the body begins with the player's capname.
+  if routing.incoming and routing.channel and self_capname then
+    local body_start = #routing.channel + 4
+    local end_idx = body_start + #self_capname - 1
+    if line_text:sub(body_start, end_idx) == self_capname then
+      local next_char = line_text:sub(end_idx + 1, end_idx + 1)
+      if next_char == ":" or next_char == " " then
+        routing.incoming = false
       end
     end
   end
