@@ -428,18 +428,22 @@ function renderSourceRow(label, key) {
   name.textContent = label;
   row.appendChild(name);
 
-  const gagLabel = document.createElement("label");
-  gagLabel.className = "settings-toggle";
-  const gag = document.createElement("input");
-  gag.type = "checkbox";
-  gag.checked = !!(settings.sources[key] && settings.sources[key].gag_main);
-  gag.addEventListener("change", () => {
-    const source = { [key]: { gag_main: gag.checked } };
-    sendUpdate({ source });
-  });
-  gagLabel.appendChild(gag);
-  gagLabel.appendChild(document.createTextNode(" gag from main"));
-  row.appendChild(gagLabel);
+  function sourceToggle(text, field) {
+    const lab = document.createElement("label");
+    lab.className = "settings-toggle";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!(settings.sources[key] && settings.sources[key][field]);
+    cb.addEventListener("change", () => {
+      sendUpdate({ source: { [key]: { [field]: cb.checked } } });
+    });
+    lab.appendChild(cb);
+    lab.appendChild(document.createTextNode(" " + text));
+    return lab;
+  }
+
+  row.appendChild(sourceToggle("gag from main", "gag_main"));
+  row.appendChild(sourceToggle("sound", "sound"));
   return row;
 }
 
@@ -477,6 +481,7 @@ function renderChannelRow(name, entry) {
   toggles.appendChild(toggle("listen", "listen"));
   toggles.appendChild(toggle("gag main", "gag_main"));
   toggles.appendChild(toggle("pin", "pinned"));
+  toggles.appendChild(toggle("sound", "sound"));
   row.appendChild(toggles);
 
   const remove = document.createElement("button");

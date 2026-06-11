@@ -69,22 +69,34 @@ local function parens_channel(line)
   return content
 end
 
+-- True if a channel-tagged line's body starts with "You " (the user's own
+-- utterance into a bracketed/parens channel — e.g. "[Wizards] You say:").
+-- `prefix_len` is the length of the leading "[name] " or "(name) " tag.
+local function channel_body_is_self(line, prefix_len)
+  return line:sub(prefix_len + 1, prefix_len + 4) == "You "
+end
+
 function M.classify(line, group_channel)
   if type(line) ~= "string" or line == "" then return nil end
-  if is_outgoing_tell(line) or is_incoming_tell(line) then
-    return { tab = "tells" }
+  if is_outgoing_tell(line) then
+    return { tab = "tells", incoming = false }
+  end
+  if is_incoming_tell(line) then
+    return { tab = "tells", incoming = true }
   end
   local ch = bracketed_channel(line)
   if ch then
+    local incoming = not channel_body_is_self(line, #ch + 3)
     if group_channel ~= nil and ch == group_channel then
-      return { tab = "group", channel = ch }
+      return { tab = "group", channel = ch, incoming = incoming }
     end
-    return { tab = "channels", channel = ch }
+    return { tab = "channels", channel = ch, incoming = incoming }
   end
   local pch = parens_channel(line)
   if pch then
     -- Parens channels always go to channels tab (never group).
-    return { tab = "channels", channel = pch }
+    local incoming = not channel_body_is_self(line, #pch + 3)
+    return { tab = "channels", channel = pch, incoming = incoming }
   end
   return nil
 end

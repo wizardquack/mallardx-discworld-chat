@@ -51,8 +51,12 @@ end
 local function load_sources()
   local s = storage.get(SOURCES_KEY)
   if not s then s = {} end
-  if not s.tells then s.tells = { gag_main = false } end
-  if not s.group then s.group = { gag_main = false } end
+  if not s.tells then s.tells = {} end
+  if not s.group then s.group = {} end
+  if s.tells.gag_main == nil then s.tells.gag_main = false end
+  if s.tells.sound    == nil then s.tells.sound    = false end
+  if s.group.gag_main == nil then s.group.gag_main = false end
+  if s.group.sound    == nil then s.group.sound    = false end
   return s
 end
 
@@ -77,9 +81,12 @@ local function ensure_channel_entry(name)
   local channels = load_channels()
   local entry = channels[name]
   if not entry then
-    entry = { listen = true, gag_main = false, pinned = false, count = 0 }
+    entry = { listen = true, gag_main = false, pinned = false, sound = false, count = 0 }
     channels[name] = entry
   end
+  -- Defensive: backfill `sound` on pre-existing entries written before
+  -- the field was added so chime decisions don't dereference nil.
+  if entry.sound == nil then entry.sound = false end
   entry.last_seen = os.time()
   entry.count = (entry.count or 0) + 1
   save_channels(channels)
@@ -141,10 +148,11 @@ panel:on_message("settings_update", function(delta)
     if delta.channel.remove then
       channels[name] = nil
     else
-      local entry = channels[name] or { listen = true, gag_main = false, pinned = false, count = 0 }
+      local entry = channels[name] or { listen = true, gag_main = false, pinned = false, sound = false, count = 0 }
       if delta.channel.listen   ~= nil then entry.listen   = delta.channel.listen   and true or false end
       if delta.channel.gag_main ~= nil then entry.gag_main = delta.channel.gag_main and true or false end
       if delta.channel.pinned   ~= nil then entry.pinned   = delta.channel.pinned   and true or false end
+      if delta.channel.sound    ~= nil then entry.sound    = delta.channel.sound    and true or false end
       channels[name] = entry
     end
     save_channels(channels)
@@ -152,11 +160,13 @@ panel:on_message("settings_update", function(delta)
 
   if type(delta.source) == "table" then
     local sources = load_sources()
-    if type(delta.source.tells) == "table" and delta.source.tells.gag_main ~= nil then
-      sources.tells.gag_main = delta.source.tells.gag_main and true or false
+    if type(delta.source.tells) == "table" then
+      if delta.source.tells.gag_main ~= nil then sources.tells.gag_main = delta.source.tells.gag_main and true or false end
+      if delta.source.tells.sound    ~= nil then sources.tells.sound    = delta.source.tells.sound    and true or false end
     end
-    if type(delta.source.group) == "table" and delta.source.group.gag_main ~= nil then
-      sources.group.gag_main = delta.source.group.gag_main and true or false
+    if type(delta.source.group) == "table" then
+      if delta.source.group.gag_main ~= nil then sources.group.gag_main = delta.source.group.gag_main and true or false end
+      if delta.source.group.sound    ~= nil then sources.group.sound    = delta.source.group.sound    and true or false end
     end
     save_sources(sources)
   end
@@ -200,11 +210,17 @@ local function route_line(line_text)
   local gag = false
   local tab = routing.tab
   local listen = true
+  -- Chime only fires for traffic the user didn't originate (classifier
+  -- marks `incoming=false` for outgoing tells and any channel/group line
+  -- whose body starts with "You ").
+  local should_chime = false
 
   if routing.tab == "tells" then
     gag = sources.tells.gag_main and true or false
+    if routing.incoming then should_chime = sources.tells.sound and true or false end
   elseif routing.tab == "group" then
     gag = sources.group.gag_main and true or false
+    if routing.incoming then should_chime = sources.group.sound and true or false end
   elseif routing.tab == "channels" then
     -- "[name] You have joined the group." fires both the bracketed-
     -- channel trigger and the group-event trigger. Trigger order isn't
@@ -215,6 +231,8 @@ local function route_line(line_text)
     if classifier.parse_group_event(line_text) then
       tab = "group"
       gag = sources.group.gag_main and true or false
+      -- Group join/leave/rename events all start with "You ", so
+      -- routing.incoming is false and no chime fires regardless.
     else
       local entry = ensure_channel_entry(routing.channel)
       gag = entry.gag_main and true or false
@@ -222,6 +240,7 @@ local function route_line(line_text)
       if entry.pinned then
         tab = "channel:" .. routing.channel
       end
+      if routing.incoming then should_chime = entry.sound and true or false end
     end
   end
 
@@ -234,6 +253,7 @@ local function route_line(line_text)
     }
     panel:post("line", payload)
     persist(payload)
+    if should_chime then mud.play_sound("mallard:chime-high") end
   end
 
   return gag
