@@ -190,6 +190,12 @@ function isPinnedToBottom() {
 // "channels" or "channel:<name>"; we fan pinned ones back into "channels"
 // here so the catch-all stays complete.
 function bufferPush(entry) {
+  // Pre-mark seen if the entry is going to be visible right now, so the
+  // tab the user is on never lights up its own dot for content it just
+  // displayed.
+  if (view === "chat" && entryBelongsInTab(entry, activeTab)) {
+    entry.seen = true;
+  }
   const targets = new Set(["all", entry.tab]);
   if (typeof entry.tab === "string" && entry.tab.startsWith("channel:")) {
     targets.add("channels");
@@ -198,6 +204,52 @@ function bufferPush(entry) {
     const buf = ensureBuffer(t);
     buf.push(entry);
     if (buf.length > BUFFER_MAX) buf.shift();
+  }
+  return targets;
+}
+
+// Unread state is tracked per-line via `entry.seen`. A tab has its dot
+// iff its buffer holds any unseen entry. Because the same entry object
+// is shared across the buffers it routes to (all + tab + maybe
+// "channels"), flipping `seen = true` while viewing one tab silently
+// clears the same line's contribution to every other tab too — so
+// viewing Group not only clears Group's dot but also All's, when the
+// Group message was the only unseen thing in All.
+//
+// Tab ids currently collapsed into the overflow "•••" button. Set by
+// collapseOverflow; consulted by refreshUnreadDots so the overflow
+// trigger lights up when a hidden tab has unread.
+let overflowHiddenIds = [];
+
+function isTabUnread(tabId) {
+  const buf = buffers[tabId];
+  if (!buf) return false;
+  for (let i = 0; i < buf.length; i++) {
+    if (!buf[i].seen) return true;
+  }
+  return false;
+}
+
+// Mark every entry in `tabId`'s buffer as seen. Entries are shared
+// across buffers, so this clears the contribution of those entries in
+// every tab that also holds them.
+function markBufferSeen(tabId) {
+  const buf = buffers[tabId];
+  if (!buf) return;
+  for (let i = 0; i < buf.length; i++) buf[i].seen = true;
+}
+
+function refreshUnreadDots() {
+  const order = computeTabOrder();
+  for (const id of order) {
+    const flag = isTabUnread(id);
+    const sel = `.tab[data-tab="${CSS.escape(id)}"]`;
+    for (const btn of tabsEl.querySelectorAll(sel)) btn.classList.toggle("has-unread", flag);
+    for (const btn of overflowPopover.querySelectorAll(sel)) btn.classList.toggle("has-unread", flag);
+  }
+  const overflowBtn = tabsEl.querySelector(".tab.overflow");
+  if (overflowBtn) {
+    overflowBtn.classList.toggle("has-unread", overflowHiddenIds.some(id => isTabUnread(id)));
   }
 }
 
@@ -233,6 +285,7 @@ function switchTab(t) {
   view = "chat";
   scrollback.hidden = false;
   settingsEl.hidden = true;
+  markBufferSeen(t);
   renderTabs();
   rerenderActive();
 }
@@ -248,7 +301,9 @@ function openSettings() {
 
 function makeTabButton(tabId, { overflow = false } = {}) {
   const btn = document.createElement("button");
-  btn.className = "tab" + (tabId === activeTab && view === "chat" ? " active" : "");
+  btn.className = "tab"
+    + (tabId === activeTab && view === "chat" ? " active" : "")
+    + (isTabUnread(tabId) ? " has-unread" : "");
   btn.dataset.tab = tabId;
   btn.role = "tab";
   btn.textContent = tabLabel(tabId);
@@ -304,6 +359,7 @@ function renderTabs() {
 
 function collapseOverflow(order, gear) {
   hideOverflowPopover();
+  overflowHiddenIds = [];
   const barWidth = tabsEl.clientWidth;
   const gearWidth = gear.offsetWidth;
   const childButtons = Array.from(tabsEl.querySelectorAll(".tab:not(.gear):not(.overflow)"));
@@ -343,7 +399,11 @@ function collapseOverflow(order, gear) {
   }
   // Rewire the overflow handler with the final hidden list.
   const hiddenIds = order.slice(overflowStart);
+  overflowHiddenIds = hiddenIds;
   overflowBtn.onclick = () => showOverflowPopover(hiddenIds, overflowBtn);
+  // Now that the overflow button exists, sync its dot — refreshUnreadDots
+  // queries `.tab.overflow` so this couldn't run during makeTabButton.
+  refreshUnreadDots();
 }
 
 // ---------------------------------------------------------------------
@@ -452,6 +512,7 @@ function renderSettings() {
 panel.on("line", (payload) => {
   bufferPush(payload);
   appendToActive(payload);
+  refreshUnreadDots();
 });
 
 let settingsReceived = false;

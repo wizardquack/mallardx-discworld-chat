@@ -39,7 +39,7 @@ body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
   cursor: pointer;
   font: inherit;
   margin: 0;
-  padding: 6px 14px;
+  padding: 6px 9px;
   white-space: nowrap;
   flex-shrink: 0;
   box-sizing: border-box;
@@ -52,6 +52,26 @@ body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
   background: var(--bg);
   color: var(--accent);
 }
+
+/* Reserve the dot's slot on every tab so toggling the unread state
+   doesn't reflow the tab bar. The slot is transparent until the tab
+   gets .has-unread, at which point it fills with the accent color. The
+   overflow ••• button gets a reserved slot too so its width is stable
+   across has-unread toggles — otherwise collapseOverflow's cutoff math
+   would shift when a hidden tab lights up. */
+.tab::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+  margin-left: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.tab.has-unread::after { background: var(--accent); }
+.tab.gear::after { display: none; }
 
 .tab.gear,
 .tab.overflow {
