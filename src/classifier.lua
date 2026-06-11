@@ -64,8 +64,10 @@ local function parens_channel(line)
   local content = line:match("^%(([^%)]+)%) [A-Za-z][A-Za-z][A-Za-z]")
   if not content then return nil end
   -- " Mon DD HH:MM TZ" suffix marks a replayed-history line. Day may
-  -- be space-padded for single digits ("Jun  4"), so allow ` +`.
-  if content:match(" %a+ +%d+ %d+:%d+ %a+$") then return nil end
+  -- be space-padded for single digits ("Jun  4"), so allow ` +`. TZ
+  -- may be multi-word (the MUD honours user-configured zones like
+  -- "Sweden DST" alongside short codes like "PDT").
+  if content:match(" %a+ +%d+ %d+:%d+ %a[%a ]*$") then return nil end
   return content
 end
 
