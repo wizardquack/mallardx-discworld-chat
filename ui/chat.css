@@ -148,6 +148,17 @@ body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
   color: var(--fg);
 }
 
+/* Channel rows have a name + meta + toggles + remove. Lock the name
+   column to a fixed width with ellipsis so the meta column starts at
+   the same x across rows even when channel names vary in length. */
+.channel-row .settings-name {
+  flex: 0 0 200px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-meta {
   flex: 1 1 auto;
   color: var(--fg-muted);
