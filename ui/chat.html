@@ -7,12 +7,14 @@
   <script src="chat.js" defer></script>
 </head>
 <body>
-  <nav class="tabs" role="tablist">
-    <button class="tab active" data-tab="all"      role="tab">All</button>
-    <button class="tab"        data-tab="tells"    role="tab">Tells</button>
-    <button class="tab"        data-tab="group"    role="tab">Group</button>
-    <button class="tab"        data-tab="channels" role="tab">Channels</button>
-  </nav>
+  <nav class="tabs" id="tabs" role="tablist"></nav>
   <main class="scrollback" id="scrollback"></main>
+  <section class="settings" id="settings" hidden>
+    <h2>Sources</h2>
+    <div class="sources" id="sources"></div>
+    <h2>Channels</h2>
+    <div class="channels" id="channels"></div>
+  </section>
+  <div class="overflow-popover" id="overflow-popover" hidden></div>
 </body>
 </html>

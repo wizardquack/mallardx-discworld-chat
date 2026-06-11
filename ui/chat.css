@@ -13,14 +13,21 @@
   --link:         #66ccff;
 }
 
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, monospace; }
-body { display: flex; flex-direction: column; overflow: hidden; }
+html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, monospace; }
+body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
+
+[hidden] { display: none !important; }
 
 .tabs {
   display: flex;
+  align-items: stretch;
   background: var(--bg-elevated);
+  border: 0;
   border-bottom: 1px solid var(--border);
+  margin: 0;
+  padding: 0;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .tab {
@@ -31,13 +38,39 @@ body { display: flex; flex-direction: column; overflow: hidden; }
   color: var(--fg-muted);
   cursor: pointer;
   font: inherit;
+  margin: 0;
   padding: 6px 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  line-height: 18px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .tab.active {
   background: var(--bg);
   color: var(--accent);
   box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.tab.gear,
+.tab.overflow {
+  padding: 6px 10px;
+  justify-content: center;
+}
+.tab.overflow { margin-left: 0; }
+.tab.gear {
+  margin-left: auto;
+  border-right: 0;
+  color: var(--fg-muted);
+}
+.tab.gear:hover { color: var(--fg); }
+.tab.gear.active { color: var(--accent); }
+.tab.gear svg {
+  display: block;
+  width: 18px;
+  height: 18px;
 }
 
 .scrollback {
@@ -54,3 +87,97 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 
 .line .ts  { color: var(--fg-muted); margin-right: 6px; }
 .line .tag { color: var(--link);     margin-right: 6px; }
+
+/* --- Settings view --- */
+
+.settings {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px;
+}
+
+.settings h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  margin: 12px 0 6px;
+  font-weight: 600;
+}
+.settings h2:first-child { margin-top: 0; }
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-name {
+  flex: 0 0 auto;
+  min-width: 100px;
+  color: var(--fg);
+}
+
+.settings-meta {
+  flex: 1 1 auto;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.settings-toggles {
+  display: flex;
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.settings-toggle input { margin: 0; cursor: pointer; }
+
+.settings-remove {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  font: inherit;
+  line-height: 1;
+}
+.settings-remove:hover { color: var(--fg); border-color: var(--fg-muted); }
+
+.settings-empty {
+  color: var(--fg-muted);
+  font-style: italic;
+  padding: 6px;
+}
+
+/* --- Overflow popover --- */
+
+.overflow-popover {
+  position: fixed;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  min-width: 140px;
+}
+
+.overflow-popover .tab {
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.overflow-popover .tab:last-child { border-bottom: 0; }
