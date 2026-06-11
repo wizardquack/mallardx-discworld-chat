@@ -21,6 +21,7 @@ const scrollback = document.getElementById("scrollback");
 const settingsEl = document.getElementById("settings");
 const sourcesEl = document.getElementById("sources");
 const channelsEl = document.getElementById("channels");
+const addChannelEl = document.getElementById("add-channel");
 const overflowPopover = document.getElementById("overflow-popover");
 
 function pad(n) { return n < 10 ? "0" + n : "" + n; }
@@ -490,10 +491,63 @@ function renderChannelRow(name, entry) {
   return row;
 }
 
+// The add-channel row lives outside the per-update channels list so a
+// late-arriving settings broadcast doesn't wipe whatever the user is
+// typing or steal focus. Built lazily on first renderSettings() call,
+// reused thereafter.
+function ensureAddChannelRow() {
+  if (addChannelEl.firstChild) return;
+
+  const row = document.createElement("div");
+  row.className = "settings-row add-channel-row";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "add-channel-input";
+  input.placeholder = "Add channel by name…";
+  input.spellcheck = false;
+  input.autocomplete = "off";
+
+  const button = document.createElement("button");
+  button.className = "settings-add";
+  button.textContent = "Add";
+
+  function submit() {
+    const name = input.value.trim();
+    if (!name) return;
+    // If an entry already exists, just clear the input and surface a
+    // brief hint via :invalid styling. The Lua side would otherwise
+    // happily re-set defaults and silently drop the user's existing
+    // toggles — better to skip the round-trip entirely.
+    if (settings.channels[name]) {
+      input.value = "";
+      input.focus();
+      return;
+    }
+    sendUpdate({ channel: { name } });
+    input.value = "";
+    input.focus();
+  }
+
+  button.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  });
+
+  row.appendChild(input);
+  row.appendChild(button);
+  addChannelEl.appendChild(row);
+}
+
 function renderSettings() {
   sourcesEl.replaceChildren();
   sourcesEl.appendChild(renderSourceRow("Tells", "tells"));
   sourcesEl.appendChild(renderSourceRow("Group", "group"));
+
+  ensureAddChannelRow();
 
   channelsEl.replaceChildren();
   const entries = Object.entries(settings.channels).sort((a, b) => {
@@ -503,7 +557,7 @@ function renderSettings() {
   if (entries.length === 0) {
     const empty = document.createElement("div");
     empty.className = "settings-empty";
-    empty.textContent = "No channels seen yet. They'll show up here as traffic arrives.";
+    empty.textContent = "No channels yet — type one above, or wait for traffic.";
     channelsEl.appendChild(empty);
   } else {
     for (const [name, entry] of entries) channelsEl.appendChild(renderChannelRow(name, entry));

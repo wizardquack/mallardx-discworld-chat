@@ -181,6 +181,34 @@ body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
 }
 .settings-toggle input { margin: 0; cursor: pointer; }
 
+.add-channel-row { gap: 8px; }
+.add-channel-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 4px 8px;
+  font: inherit;
+  border-radius: 3px;
+}
+.add-channel-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.settings-add {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 4px 14px;
+  font: inherit;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+.settings-add:hover { color: var(--fg); border-color: var(--fg-muted); }
+
 .settings-remove {
   appearance: none;
   background: transparent;
