@@ -44,6 +44,96 @@ function escapeHtml(s) {
   }[c]));
 }
 
+// URL autolinking — mirrors src-tauri/src/url_autolink.rs in Mallard proper
+// so links in plugin content behave the same as links in the main output:
+// the same shapes match (http(s)://, www., mailto:, bare host/path), the
+// same trailing-punctuation trim runs, and the same "bare host with no path"
+// guard prevents false positives on file names like `connection.lua`.
+const URL_RE = new RegExp(
+  [
+    "https?://[^\\s<>\"'`]+",
+    "www\\.[^\\s<>\"'`]+",
+    "mailto:[^\\s<>\"'`]+",
+    "[A-Za-z0-9][A-Za-z0-9-]*(?:\\.[A-Za-z0-9][A-Za-z0-9-]+)+/[^\\s<>\"'`]+",
+  ].join("|"),
+  "g",
+);
+
+function trimTrailingPunctuation(matched) {
+  let end = matched.length;
+  while (end > 0) {
+    const c = matched[end - 1];
+    if (c === "." || c === "," || c === ";" || c === ":" || c === "!" || c === "?") {
+      end -= 1;
+      continue;
+    }
+    const pair = c === ")" ? ["(", ")"]
+      : c === "]" ? ["[", "]"]
+      : c === "}" ? ["{", "}"]
+      : c === ">" ? ["<", ">"]
+      : null;
+    if (!pair) break;
+    const prefix = matched.slice(0, end);
+    let opens = 0, closes = 0;
+    for (const ch of prefix) { if (ch === pair[0]) opens++; else if (ch === pair[1]) closes++; }
+    if (closes > opens) end -= 1; else break;
+  }
+  return matched.slice(0, end);
+}
+
+function linkTarget(matched) {
+  if (matched.startsWith("http://") || matched.startsWith("https://") || matched.startsWith("mailto:")) {
+    return matched;
+  }
+  return "https://" + matched;
+}
+
+// Build a document fragment from `text`, with detected URLs as anchors that
+// route clicks through `panel.openUrl`. Anchors carry `href` so right-click
+// "Copy link" works and middle-clickability surfaces; the click handler
+// preventDefaults to keep the iframe from navigating away from itself.
+function renderTextWithLinks(text) {
+  const frag = document.createDocumentFragment();
+  let cursor = 0;
+  URL_RE.lastIndex = 0;
+  let m;
+  while ((m = URL_RE.exec(text)) !== null) {
+    const matched = trimTrailingPunctuation(m[0]);
+    if (!matched) continue;
+    const start = m.index;
+    const end = start + matched.length;
+    // Resync regex past the trimmed match so e.g. a stripped trailing "." can
+    // still be the start of a fresh consideration on the next iteration.
+    URL_RE.lastIndex = end;
+    if (start > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, start)));
+    const a = document.createElement("a");
+    a.className = "url";
+    a.textContent = matched;
+    a.href = linkTarget(matched);
+    a.rel = "noopener noreferrer";
+    a.addEventListener("click", onUrlClick);
+    a.addEventListener("auxclick", onUrlClick);
+    frag.appendChild(a);
+    cursor = end;
+  }
+  if (cursor === 0) {
+    frag.appendChild(document.createTextNode(text));
+  } else if (cursor < text.length) {
+    frag.appendChild(document.createTextNode(text.slice(cursor)));
+  }
+  return frag;
+}
+
+function onUrlClick(e) {
+  // Left and middle clicks; ignore modifier-clicks so the user can still
+  // select-and-drag a URL into the system clipboard via Cmd+drag etc.
+  if (e.type === "auxclick" && e.button !== 1) return;
+  if (e.button !== undefined && e.button !== 0 && e.button !== 1) return;
+  e.preventDefault();
+  const url = e.currentTarget.href;
+  if (typeof panel.openUrl === "function") panel.openUrl(url);
+}
+
 // Pinned channel tabs ordered by last_seen desc.
 function pinnedChannels() {
   return Object.entries(settings.channels)
@@ -84,8 +174,8 @@ function renderLine({ tab, channel, text, ts }) {
   }
   el.innerHTML =
     `<span class="ts">${formatTime(ts)}</span>` +
-    (tag ? `<span class="tag">${tag}</span>` : "") +
-    escapeHtml(body);
+    (tag ? `<span class="tag">${tag}</span>` : "");
+  el.appendChild(renderTextWithLinks(body));
   return el;
 }
 

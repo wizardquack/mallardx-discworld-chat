@@ -88,6 +88,14 @@ body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
 .line .ts  { color: var(--fg-muted); margin-right: 6px; }
 .line .tag { color: var(--link);     margin-right: 6px; }
 
+.line a.url {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.line a.url:hover { filter: brightness(1.15); }
+
 /* --- Settings view --- */
 
 .settings {
