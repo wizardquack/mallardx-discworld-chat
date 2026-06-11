@@ -110,13 +110,16 @@ end
 -- The iframe may retry "ready" if its first attempt raced the plugin's
 -- top-level code (Mallard's panel dispatcher drops messages when no
 -- listener is registered yet — see host.rs panel_dispatch_post). We
--- only replay history once per plugin instance to avoid duplicating
--- the scrollback; settings can be re-broadcast freely.
-local replayed = false
-panel:on_message("ready", function()
-  if not replayed then
+-- dedupe by the iframe's `session` token so retries within a single
+-- mount don't double-replay, but a fresh mount (clicking the tray icon
+-- to remount, plugin reload, etc.) gets its history replayed every
+-- time. Settings can be re-broadcast freely.
+local last_replay_session = nil
+panel:on_message("ready", function(payload)
+  local session = type(payload) == "table" and payload.session or nil
+  if session == nil or session ~= last_replay_session then
     replay()
-    replayed = true
+    last_replay_session = session
   end
   broadcast_settings()
 end)

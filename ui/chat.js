@@ -468,16 +468,18 @@ renderTabs();
 // our first "ready" can race the plugin's top-level code on a Mallard
 // restart. Plugins can load lazily after the panel mounts, so we keep
 // retrying generously until Lua's "settings" reply confirms the
-// handshake landed. Lua dedupes history replay internally.
+// handshake landed. Lua dedupes history replay by `session` so retries
+// don't double-replay but a fresh iframe mount always gets history.
 const READY_RETRY_MS = 500;
 const READY_MAX_ATTEMPTS = 120; // ~60s total
+const SESSION_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 let readyAttempts = 0;
 let readyTimer = null;
 function sendReady() {
   readyTimer = null;
   if (settingsReceived) return;
   if (readyAttempts >= READY_MAX_ATTEMPTS) return;
-  panel.post("ready", {});
+  panel.post("ready", { session: SESSION_ID });
   readyAttempts += 1;
   readyTimer = setTimeout(sendReady, READY_RETRY_MS);
 }
