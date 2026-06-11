@@ -215,6 +215,27 @@ local function route_line(line_text)
   local routing = classifier.classify(line_text, group_channel)
   if not routing then return false end
 
+  -- Discworld echoes the user's own channel talk in two shapes: the
+  -- legacy "[ChannelName] You say: ..." (caught by the classifier's
+  -- "You " body check) and the modern "[ChannelName] CharName: ..."
+  -- form (which classifier can't recognize without the player's name).
+  -- gmcp.get reads the latest Char.Info.capname out of the world's
+  -- GMCP mirror; falls through silently when the server hasn't yet
+  -- sent the frame.
+  if routing.incoming and routing.channel then
+    local _, capname = pcall(gmcp.get, "Char.Info.capname")
+    if type(capname) == "string" and capname ~= "" then
+      local body_start = #routing.channel + 4
+      local end_idx = body_start + #capname - 1
+      if line_text:sub(body_start, end_idx) == capname then
+        local next_char = line_text:sub(end_idx + 1, end_idx + 1)
+        if next_char == ":" or next_char == " " then
+          routing.incoming = false
+        end
+      end
+    end
+  end
+
   local sources = load_sources()
   local gag = false
   local tab = routing.tab
