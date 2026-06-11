@@ -40,8 +40,9 @@ end
 -- Settings — per-channel registry + per-source toggles.
 -- ---------------------------------------------------------------------
 
-local CHANNELS_KEY = "channel_settings_v1"
-local SOURCES_KEY  = "source_settings_v1"
+local CHANNELS_KEY   = "channel_settings_v1"
+local SOURCES_KEY    = "source_settings_v1"
+local ACTIVE_TAB_KEY = "active_tab_v1"
 
 local function load_channels()
   return storage.get(CHANNELS_KEY) or {}
@@ -59,7 +60,11 @@ local function save_channels(c) storage.set(CHANNELS_KEY, c) end
 local function save_sources(s)  storage.set(SOURCES_KEY,  s) end
 
 local function full_settings()
-  return { channels = load_channels(), sources = load_sources() }
+  return {
+    channels   = load_channels(),
+    sources    = load_sources(),
+    active_tab = storage.get(ACTIVE_TAB_KEY),
+  }
 end
 
 local function broadcast_settings()
@@ -157,6 +162,16 @@ panel:on_message("settings_update", function(delta)
   end
 
   broadcast_settings()
+end)
+
+-- Persist the user's last-viewed chat tab so a fresh iframe (Mallard
+-- restart, plugin reload, tray icon click) can restore it. No need to
+-- broadcast back — the iframe already knows what it just sent.
+panel:on_message("active_tab", function(payload)
+  if type(payload) ~= "table" then return end
+  if type(payload.tab) == "string" then
+    storage.set(ACTIVE_TAB_KEY, payload.tab)
+  end
 end)
 
 -- ---------------------------------------------------------------------

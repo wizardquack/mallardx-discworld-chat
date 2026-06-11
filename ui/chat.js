@@ -288,6 +288,11 @@ function switchTab(t) {
   markBufferSeen(t);
   renderTabs();
   rerenderActive();
+  panel.post("active_tab", { tab: t });
+  // Any explicit tab choice (including the restore call below) closes
+  // the one-shot restore window so a late `settings` broadcast can't
+  // yank the user back.
+  activeTabRestored = true;
 }
 
 function openSettings() {
@@ -516,11 +521,24 @@ panel.on("line", (payload) => {
 });
 
 let settingsReceived = false;
+let activeTabRestored = false;
 panel.on("settings", (payload) => {
   settingsReceived = true;
   if (payload && typeof payload === "object") {
     settings.channels = payload.channels || {};
     settings.sources = payload.sources || settings.sources;
+    // Restore the persisted active tab once per iframe lifetime —
+    // subsequent settings broadcasts (e.g. after a settings_update)
+    // must not yank the user back if they've since clicked elsewhere.
+    // switchTab is a no-op if the saved tab is no longer in the tab
+    // order (e.g. channel was unpinned in another session), and the
+    // post-back it does is idempotent.
+    if (!activeTabRestored) {
+      activeTabRestored = true;
+      if (typeof payload.active_tab === "string" && payload.active_tab !== activeTab) {
+        switchTab(payload.active_tab);
+      }
+    }
   }
   renderTabs();
   if (view === "settings") renderSettings();
