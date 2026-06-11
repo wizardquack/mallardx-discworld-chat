@@ -183,11 +183,17 @@ function isPinnedToBottom() {
   return scrollback.scrollHeight - scrollback.scrollTop - scrollback.clientHeight < 16;
 }
 
-// Every line goes to "all". Channel lines additionally route to either
-// channel:<name> (if pinned) or "channels" (catch-all). The Lua side
-// already chose between channel:<name> vs "channels" via payload.tab.
+// Every line goes to "all". Channel lines route to "channels" (the master
+// channel roll-up) and additionally to "channel:<name>" when the channel
+// is pinned — pinned tabs are focused *additional* views, not replacements
+// for the Channels tab. The Lua side stamps payload.tab as either
+// "channels" or "channel:<name>"; we fan pinned ones back into "channels"
+// here so the catch-all stays complete.
 function bufferPush(entry) {
   const targets = new Set(["all", entry.tab]);
+  if (typeof entry.tab === "string" && entry.tab.startsWith("channel:")) {
+    targets.add("channels");
+  }
   for (const t of targets) {
     const buf = ensureBuffer(t);
     buf.push(entry);
@@ -195,9 +201,16 @@ function bufferPush(entry) {
   }
 }
 
+function entryBelongsInTab(entry, tab) {
+  if (tab === "all") return true;
+  if (tab === entry.tab) return true;
+  if (tab === "channels" && typeof entry.tab === "string" && entry.tab.startsWith("channel:")) return true;
+  return false;
+}
+
 function appendToActive(entry) {
   if (view !== "chat") return;
-  if (activeTab !== "all" && entry.tab !== activeTab) return;
+  if (!entryBelongsInTab(entry, activeTab)) return;
   const wasPinned = isPinnedToBottom();
   scrollback.appendChild(renderLine(entry));
   while (scrollback.childElementCount > BUFFER_MAX) {
