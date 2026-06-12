@@ -18,6 +18,9 @@ gmcp_access = ["char.info"]
 [worlds]
 match = ["discworld.starturtle.net:*"]
 
+[gmcp]
+advertise = ["char.info"]
+
 [panels.chat]
 title              = "Chat"
 entry              = "ui/chat.html"
