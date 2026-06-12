@@ -1,14 +1,18 @@
 # Discworld Chat
 
-A Mallard plugin for Discworld MUD. Captures tells, group says,
-and public channels into a 4-tab panel: `All / Tells / Group / Channels`.
+A Mallard plugin for Discworld MUD. Captures tells, group chatter/events,
+and talker channels into a configurable, tabbed chat panel.
 
-## Persistence & Replay
+The panel is configurable via the gear icon on the right side, where
+you can add/remove tabs, and control per tab/channel settings for
+things like:
 
-One fun feature is that there is per-tab scrollback (max 500 lines),
-which is persisted to plugin storage and replayed on Mallard restart.
+- whether or not to play notification sounds
+- whether or not to gag from the main output
+- whether or not to pina dedicated tab for the channel, or just
+  capture in an aggregator tab like "Channels"
 
 ## Credit
 
-Thank you to Quow and Oki, whose plugins helped me sort through all
-the regex to make this one work!
+Many thanks to Quow and Oki, whose work on similar plugins was
+invaluable in designing and building this one.
