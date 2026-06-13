@@ -13,7 +13,7 @@
   --link:         #66ccff;
 }
 
-html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, monospace; }
+html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg); }
 body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
 
 [hidden] { display: none !important; }
