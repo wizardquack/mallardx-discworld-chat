@@ -15,40 +15,28 @@ local classifier = require("classifier")
 local panel = mud.panel("chat")
 
 -- ---------------------------------------------------------------------
--- Persistence — 500-entry ring buffer in plugin storage. Replayed when
--- the panel iframe (re-)mounts and posts a "ready" handshake.
+-- Storage keys + module-scope caches.
+--
+-- Field timings showed route_line() doing 2–6 SQLite round-trips per chat
+-- line (p50 22ms, p99 114ms). Every mutable storage value is now mirrored
+-- in a module-scope Lua local: hot paths read/write the cache, and a
+-- debounced timer flushes dirty caches to disk every 5s. User-initiated
+-- changes (settings toggles, group join/leave) flush eagerly so they
+-- survive a crash; background bookkeeping (last_seen / count bumps,
+-- scrollback append) rides the debounce. See
+-- docs/specs/2026-06-14-route-line-perf-design.md.
 -- ---------------------------------------------------------------------
 
-local HISTORY_MAX = 500
-local HISTORY_KEY = "chat_history_v1"
-
-local function persist(entry)
-  local hist = storage.get(HISTORY_KEY) or {}
-  hist[#hist + 1] = entry
-  while #hist > HISTORY_MAX do table.remove(hist, 1) end
-  storage.set(HISTORY_KEY, hist)
-end
-
-local function replay()
-  local hist = storage.get(HISTORY_KEY) or {}
-  for _, e in ipairs(hist) do
-    panel:post("line", e)
-  end
-end
-
--- ---------------------------------------------------------------------
--- Settings — per-channel registry + per-source toggles.
--- ---------------------------------------------------------------------
-
+local HISTORY_MAX    = 500
+local HISTORY_KEY    = "chat_history_v1"
 local CHANNELS_KEY   = "channel_settings_v1"
 local SOURCES_KEY    = "source_settings_v1"
 local ACTIVE_TAB_KEY = "active_tab_v1"
+local GROUP_KEY      = "group_channel"
 
-local function load_channels()
-  return storage.get(CHANNELS_KEY) or {}
-end
+local PERSIST_DEBOUNCE_MS = 5000
 
-local function load_sources()
+local function init_sources()
   local s = storage.get(SOURCES_KEY)
   if not s then s = {} end
   if not s.tells then s.tells = {} end
@@ -60,13 +48,50 @@ local function load_sources()
   return s
 end
 
-local function save_channels(c) storage.set(CHANNELS_KEY, c) end
-local function save_sources(s)  storage.set(SOURCES_KEY,  s) end
+local channels_cache = storage.get(CHANNELS_KEY) or {}
+local sources_cache  = init_sources()
+local group_channel  = storage.get(GROUP_KEY)
+local history_buf    = storage.get(HISTORY_KEY) or {}
+
+local channels_dirty = false
+local history_dirty  = false
+
+local function flush()
+  if history_dirty then
+    storage.set(HISTORY_KEY, history_buf)
+    history_dirty = false
+  end
+  if channels_dirty then
+    storage.set(CHANNELS_KEY, channels_cache)
+    channels_dirty = false
+  end
+end
+
+-- ---------------------------------------------------------------------
+-- Scrollback — 500-entry ring buffer in plugin storage. Replayed when
+-- the panel iframe (re-)mounts and posts a "ready" handshake.
+-- ---------------------------------------------------------------------
+
+local function persist(entry)
+  history_buf[#history_buf + 1] = entry
+  while #history_buf > HISTORY_MAX do table.remove(history_buf, 1) end
+  history_dirty = true
+end
+
+local function replay()
+  for _, e in ipairs(history_buf) do
+    panel:post("line", e)
+  end
+end
+
+-- ---------------------------------------------------------------------
+-- Settings — per-channel registry + per-source toggles.
+-- ---------------------------------------------------------------------
 
 local function full_settings()
   return {
-    channels   = load_channels(),
-    sources    = load_sources(),
+    channels   = channels_cache,
+    sources    = sources_cache,
     active_tab = storage.get(ACTIVE_TAB_KEY),
   }
 end
@@ -76,36 +101,42 @@ local function broadcast_settings()
 end
 
 -- Mark a channel as seen — creates a default entry on first sighting,
--- bumps last_seen + count on every observation.
+-- bumps last_seen + count on every observation. Rides the debounce: a
+-- per-match write of the channels map would re-encode the whole table
+-- and was a large fraction of the p50 cost.
 local function ensure_channel_entry(name)
-  local channels = load_channels()
-  local entry = channels[name]
+  local entry = channels_cache[name]
   if not entry then
     entry = { listen = true, gag_main = false, pinned = false, sound = false, count = 0 }
-    channels[name] = entry
+    channels_cache[name] = entry
   end
   -- Defensive: backfill `sound` on pre-existing entries written before
   -- the field was added so chime decisions don't dereference nil.
   if entry.sound == nil then entry.sound = false end
   entry.last_seen = os.time()
   entry.count = (entry.count or 0) + 1
-  save_channels(channels)
+  channels_dirty = true
   return entry
 end
 
 local function set_group(name)
   if name == nil or name == "" then
-    storage.set("group_channel", nil)
+    group_channel = nil
+    storage.set(GROUP_KEY, nil)
   else
-    storage.set("group_channel", name)
+    group_channel = name
+    storage.set(GROUP_KEY, name)
     -- A bracketed-channel trigger can race the group-join trigger on
     -- the very first "[name] You have joined the group." line and
     -- stamp `name` into the channel registry before we knew it was a
     -- group. Clean it up so it doesn't surface as a regular channel.
-    local channels = load_channels()
-    if channels[name] then
-      channels[name] = nil
-      save_channels(channels)
+    if channels_cache[name] then
+      channels_cache[name] = nil
+      -- User-visible state change (the channel disappears from the
+      -- settings list) — flush immediately rather than waiting on the
+      -- debounce, and clear the dirty flag along with it.
+      storage.set(CHANNELS_KEY, channels_cache)
+      channels_dirty = false
       broadcast_settings()
     end
   end
@@ -143,32 +174,34 @@ panel:on_message("settings_update", function(delta)
   if type(delta) ~= "table" then return end
 
   if type(delta.channel) == "table" and type(delta.channel.name) == "string" then
-    local channels = load_channels()
     local name = delta.channel.name
     if delta.channel.remove then
-      channels[name] = nil
+      channels_cache[name] = nil
     else
-      local entry = channels[name] or { listen = true, gag_main = false, pinned = false, sound = false, count = 0 }
+      local entry = channels_cache[name] or { listen = true, gag_main = false, pinned = false, sound = false, count = 0 }
       if delta.channel.listen   ~= nil then entry.listen   = delta.channel.listen   and true or false end
       if delta.channel.gag_main ~= nil then entry.gag_main = delta.channel.gag_main and true or false end
       if delta.channel.pinned   ~= nil then entry.pinned   = delta.channel.pinned   and true or false end
       if delta.channel.sound    ~= nil then entry.sound    = delta.channel.sound    and true or false end
-      channels[name] = entry
+      channels_cache[name] = entry
     end
-    save_channels(channels)
+    -- User toggled a checkbox; flush eagerly so the change survives a
+    -- crash within the next 5s. Clears the dirty flag because the
+    -- write also persists any debounced bumps that piggybacked on it.
+    storage.set(CHANNELS_KEY, channels_cache)
+    channels_dirty = false
   end
 
   if type(delta.source) == "table" then
-    local sources = load_sources()
     if type(delta.source.tells) == "table" then
-      if delta.source.tells.gag_main ~= nil then sources.tells.gag_main = delta.source.tells.gag_main and true or false end
-      if delta.source.tells.sound    ~= nil then sources.tells.sound    = delta.source.tells.sound    and true or false end
+      if delta.source.tells.gag_main ~= nil then sources_cache.tells.gag_main = delta.source.tells.gag_main and true or false end
+      if delta.source.tells.sound    ~= nil then sources_cache.tells.sound    = delta.source.tells.sound    and true or false end
     end
     if type(delta.source.group) == "table" then
-      if delta.source.group.gag_main ~= nil then sources.group.gag_main = delta.source.group.gag_main and true or false end
-      if delta.source.group.sound    ~= nil then sources.group.sound    = delta.source.group.sound    and true or false end
+      if delta.source.group.gag_main ~= nil then sources_cache.group.gag_main = delta.source.group.gag_main and true or false end
+      if delta.source.group.sound    ~= nil then sources_cache.group.sound    = delta.source.group.sound    and true or false end
     end
-    save_sources(sources)
+    storage.set(SOURCES_KEY, sources_cache)
   end
 
   broadcast_settings()
@@ -223,7 +256,6 @@ local function route_line(line_text)
     htell_replay_pending = false
     return false
   end
-  local group_channel = storage.get("group_channel")
   local routing = classifier.classify(line_text, group_channel)
   if not routing then return false end
 
@@ -245,7 +277,6 @@ local function route_line(line_text)
     end
   end
 
-  local sources = load_sources()
   local gag = false
   local tab = routing.tab
   local listen = true
@@ -255,11 +286,11 @@ local function route_line(line_text)
   local should_chime = false
 
   if routing.tab == "tells" then
-    gag = sources.tells.gag_main and true or false
-    if routing.incoming then should_chime = sources.tells.sound and true or false end
+    gag = sources_cache.tells.gag_main and true or false
+    if routing.incoming then should_chime = sources_cache.tells.sound and true or false end
   elseif routing.tab == "group" then
-    gag = sources.group.gag_main and true or false
-    if routing.incoming then should_chime = sources.group.sound and true or false end
+    gag = sources_cache.group.gag_main and true or false
+    if routing.incoming then should_chime = sources_cache.group.sound and true or false end
   elseif routing.tab == "channels" then
     -- "[name] You have joined the group." fires both the bracketed-
     -- channel trigger and the group-event trigger. Trigger order isn't
@@ -269,7 +300,7 @@ local function route_line(line_text)
     -- freshly-formed group can't slip into the channel registry.
     if classifier.parse_group_event(line_text) then
       tab = "group"
-      gag = sources.group.gag_main and true or false
+      gag = sources_cache.group.gag_main and true or false
       -- Group join/leave/rename events all start with "You ", so
       -- routing.incoming is false and no chime fires regardless.
     else
@@ -360,3 +391,14 @@ end)
 mud.trigger([==[^\[[^\]]+\] You have left the group\.$]==], function()
   set_group(nil)
 end)
+
+-- ---------------------------------------------------------------------
+-- Debounced flush + disconnect flush.
+--
+-- Both dirty buffers ride a single 5s timer. `world.on("disconnect")`
+-- also fires on plugin reload (see mallard host.rs dispatch_lifecycle),
+-- so a fresh code drop won't lose the in-flight buffers either.
+-- ---------------------------------------------------------------------
+
+mud.every(PERSIST_DEBOUNCE_MS, flush)
+world.on("disconnect", flush)
