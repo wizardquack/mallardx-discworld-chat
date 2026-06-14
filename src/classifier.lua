@@ -119,7 +119,13 @@ function M.parse_group_event(line)
   if line:match("^%[[^%]]+%] You have left the group%.$") then
     return { kind = "leave" }
   end
-  local new_name = line:match("^%[[^%]]+%] The group has been renamed to (.+)%.$")
+  -- Capture the *bracketed* name, not the body. Discworld displays the new
+  -- group name in brackets in its canonical form (auto-capitalised, truncated
+  -- to ~15 chars with `...`), while the body carries the raw lowercase name
+  -- the renamer typed. Future group says reuse the bracketed form, so storing
+  -- the body name would orphan the Group tab — e.g. brackets `[ParanoidSmug...]`
+  -- vs body `paranoidsmugglers`.
+  local new_name = line:match("^%[([^%]]+)%] The group has been renamed to .+%.$")
   if new_name then return { kind = "rename", name = new_name } end
   return nil
 end
