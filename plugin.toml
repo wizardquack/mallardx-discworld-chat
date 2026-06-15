@@ -1,6 +1,6 @@
 id = "net.mallard.discworld-chat"
 name = "Discworld Chat"
-version = "0.2.3"
+version = "0.2.4"
 description = "A tabbed chat panel for capturing tells, group chatter, and talker chatter."
 language = "lua"
 entry = "src/main.lua"
@@ -12,8 +12,11 @@ license = "MIT"
 [permissions]
 # Subscribe to Char.Info so route_line can detect the player's own
 # channel utterances (Discworld echoes them as "[ChannelName] CharName:
-# ..." rather than with a "You " prefix).
-gmcp_access = ["char.info"]
+# ..." rather than with a "You " prefix). The "char.info.*" entry is for
+# gmcp.get() at startup so we self-heal on plugin reload — gmcp.on only
+# catches future pushes, but the engine's GMCP mirror retains the last
+# value, so we read it directly to seed self_capname without waiting.
+gmcp_access = ["char.info", "char.info.*"]
 
 [worlds]
 match = ["discworld.starturtle.net:*"]

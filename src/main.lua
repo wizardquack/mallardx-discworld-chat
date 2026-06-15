@@ -242,12 +242,22 @@ local last_chime_ts = 0
 -- ..." rather than "[Channel] You ..."). Populated on every Char.Info
 -- push — gmcp.on lowercases the prefix at registration, so this works
 -- regardless of the server's wire case for the package name.
+--
+-- On plugin reload mid-session, gmcp.on won't replay the char.info frame
+-- the server already pushed, so we'd be stuck without self_capname until
+-- the next push (which may never come if the player isn't doing anything
+-- that re-triggers it). Read the GMCP mirror directly via gmcp.get to
+-- self-heal — the live gmcp.on handler keeps it fresh after that.
 local self_capname = nil
 gmcp.on("char.info", function(_, data)
   if type(data) == "table" and type(data.capname) == "string" then
     self_capname = data.capname
   end
 end)
+local cached_capname = gmcp.get("char.info.capname")
+if type(cached_capname) == "string" and cached_capname ~= "" then
+  self_capname = cached_capname
+end
 
 -- Returns true if the line should be gagged from the main output pane.
 -- Also posts to the panel (and persists) when the relevant `listen` is on.
