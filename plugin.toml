@@ -18,6 +18,11 @@ license = "MIT"
 # value, so we read it directly to seed self_capname without waiting.
 gmcp_access = ["char.info", "char.info.*"]
 
+# Per-source / per-channel "notify" toggles let the user opt into a
+# desktop notification on each incoming message (see ui.notify in
+# route_line). Without this capability the host rejects ui.notify.
+notifications = true
+
 [worlds]
 match = ["discworld.starturtle.net:*"]
 

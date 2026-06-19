@@ -444,6 +444,7 @@ function renderSourceRow(label, key) {
 
   row.appendChild(sourceToggle("gag from main", "gag_main"));
   row.appendChild(sourceToggle("sound", "sound"));
+  row.appendChild(sourceToggle("notify", "notify"));
   return row;
 }
 
@@ -482,6 +483,7 @@ function renderChannelRow(name, entry) {
   toggles.appendChild(toggle("gag main", "gag_main"));
   toggles.appendChild(toggle("pin", "pinned"));
   toggles.appendChild(toggle("sound", "sound"));
+  toggles.appendChild(toggle("notify", "notify"));
   row.appendChild(toggles);
 
   const remove = document.createElement("button");

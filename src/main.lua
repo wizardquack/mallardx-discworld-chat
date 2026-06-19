@@ -43,8 +43,10 @@ local function init_sources()
   if not s.group then s.group = {} end
   if s.tells.gag_main == nil then s.tells.gag_main = false end
   if s.tells.sound    == nil then s.tells.sound    = false end
+  if s.tells.notify   == nil then s.tells.notify   = false end
   if s.group.gag_main == nil then s.group.gag_main = false end
   if s.group.sound    == nil then s.group.sound    = false end
+  if s.group.notify   == nil then s.group.notify   = false end
   return s
 end
 
@@ -107,12 +109,14 @@ end
 local function ensure_channel_entry(name)
   local entry = channels_cache[name]
   if not entry then
-    entry = { listen = true, gag_main = false, pinned = false, sound = false, count = 0 }
+    entry = { listen = true, gag_main = false, pinned = false, sound = false, notify = false, count = 0 }
     channels_cache[name] = entry
   end
-  -- Defensive: backfill `sound` on pre-existing entries written before
-  -- the field was added so chime decisions don't dereference nil.
-  if entry.sound == nil then entry.sound = false end
+  -- Defensive: backfill `sound`/`notify` on pre-existing entries written
+  -- before the fields were added so chime/notify decisions don't
+  -- dereference nil.
+  if entry.sound  == nil then entry.sound  = false end
+  if entry.notify == nil then entry.notify = false end
   entry.last_seen = os.time()
   entry.count = (entry.count or 0) + 1
   channels_dirty = true
@@ -168,8 +172,8 @@ panel:on_message("ready", function(payload)
 end)
 
 -- Delta shape (any field optional):
---   { channel = { name = "foo", listen = bool, gag_main = bool, pinned = bool, remove = bool },
---     source  = { tells = { gag_main = bool }, group = { gag_main = bool } } }
+--   { channel = { name = "foo", listen = bool, gag_main = bool, pinned = bool, sound = bool, notify = bool, remove = bool },
+--     source  = { tells = { gag_main = bool, sound = bool, notify = bool }, group = { gag_main = bool, sound = bool, notify = bool } } }
 panel:on_message("settings_update", function(delta)
   if type(delta) ~= "table" then return end
 
@@ -178,11 +182,12 @@ panel:on_message("settings_update", function(delta)
     if delta.channel.remove then
       channels_cache[name] = nil
     else
-      local entry = channels_cache[name] or { listen = true, gag_main = false, pinned = false, sound = false, count = 0 }
+      local entry = channels_cache[name] or { listen = true, gag_main = false, pinned = false, sound = false, notify = false, count = 0 }
       if delta.channel.listen   ~= nil then entry.listen   = delta.channel.listen   and true or false end
       if delta.channel.gag_main ~= nil then entry.gag_main = delta.channel.gag_main and true or false end
       if delta.channel.pinned   ~= nil then entry.pinned   = delta.channel.pinned   and true or false end
       if delta.channel.sound    ~= nil then entry.sound    = delta.channel.sound    and true or false end
+      if delta.channel.notify   ~= nil then entry.notify   = delta.channel.notify   and true or false end
       channels_cache[name] = entry
     end
     -- User toggled a checkbox; flush eagerly so the change survives a
@@ -196,10 +201,12 @@ panel:on_message("settings_update", function(delta)
     if type(delta.source.tells) == "table" then
       if delta.source.tells.gag_main ~= nil then sources_cache.tells.gag_main = delta.source.tells.gag_main and true or false end
       if delta.source.tells.sound    ~= nil then sources_cache.tells.sound    = delta.source.tells.sound    and true or false end
+      if delta.source.tells.notify   ~= nil then sources_cache.tells.notify   = delta.source.tells.notify   and true or false end
     end
     if type(delta.source.group) == "table" then
       if delta.source.group.gag_main ~= nil then sources_cache.group.gag_main = delta.source.group.gag_main and true or false end
       if delta.source.group.sound    ~= nil then sources_cache.group.sound    = delta.source.group.sound    and true or false end
+      if delta.source.group.notify   ~= nil then sources_cache.group.notify   = delta.source.group.notify   and true or false end
     end
     storage.set(SOURCES_KEY, sources_cache)
   end
@@ -236,6 +243,10 @@ local htell_replay_pending = false
 -- minimum gap is ≥1s.
 local CHIME_DEBOUNCE_S = 2
 local last_chime_ts = 0
+-- Desktop notifications share the chime's leading-edge throttle window
+-- but track their own timestamp, so enabling both sound and notify on a
+-- source doesn't let one suppress the other.
+local last_notify_ts = 0
 
 -- Cached character name from GMCP Char.Info, used to detect the user's
 -- own channel utterances (Discworld echoes them as "[Channel] CapName:
@@ -290,17 +301,28 @@ local function route_line(line_text)
   local gag = false
   local tab = routing.tab
   local listen = true
-  -- Chime only fires for traffic the user didn't originate (classifier
-  -- marks `incoming=false` for outgoing tells and any channel/group line
-  -- whose body starts with "You ").
+  -- Chime / notify only fire for traffic the user didn't originate
+  -- (classifier marks `incoming=false` for outgoing tells and any
+  -- channel/group line whose body starts with "You ").
   local should_chime = false
+  local should_notify = false
+  -- Title shown on the desktop notification; body is always the line.
+  local notify_title = nil
 
   if routing.tab == "tells" then
     gag = sources_cache.tells.gag_main and true or false
-    if routing.incoming then should_chime = sources_cache.tells.sound and true or false end
+    if routing.incoming then
+      should_chime  = sources_cache.tells.sound  and true or false
+      should_notify = sources_cache.tells.notify and true or false
+      notify_title  = "Tell"
+    end
   elseif routing.tab == "group" then
     gag = sources_cache.group.gag_main and true or false
-    if routing.incoming then should_chime = sources_cache.group.sound and true or false end
+    if routing.incoming then
+      should_chime  = sources_cache.group.sound  and true or false
+      should_notify = sources_cache.group.notify and true or false
+      notify_title  = "Group"
+    end
   elseif routing.tab == "channels" then
     -- "[name] You have joined the group." fires both the bracketed-
     -- channel trigger and the group-event trigger. Trigger order isn't
@@ -320,7 +342,11 @@ local function route_line(line_text)
       if entry.pinned then
         tab = "channel:" .. routing.channel
       end
-      if routing.incoming then should_chime = entry.sound and true or false end
+      if routing.incoming then
+        should_chime  = entry.sound  and true or false
+        should_notify = entry.notify and true or false
+        notify_title  = routing.channel
+      end
     end
   end
 
@@ -338,6 +364,13 @@ local function route_line(line_text)
       if now - last_chime_ts >= CHIME_DEBOUNCE_S then
         mud.play_sound("mallard:chime-high")
         last_chime_ts = now
+      end
+    end
+    if should_notify then
+      local now = os.time()
+      if now - last_notify_ts >= CHIME_DEBOUNCE_S then
+        ui.notify(notify_title or "Chat", line_text)
+        last_notify_ts = now
       end
     end
   end
