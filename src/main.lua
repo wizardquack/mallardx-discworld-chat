@@ -397,12 +397,18 @@ mud.trigger([==[^You (?:[A-Za-z]+ )?(?:tell |exclaim to |ask ).+?: ]==], functio
   if route_line(m.text) then m:gag() end
 end)
 
--- Incoming tell / asks / exclaims. The `(?: [A-Z]\w+)*` allows multi-word
--- capitalized speaker names ("Astrum Argenteum tells you: ..."); the
--- optional `(?:[a-z]+ )?` matches adverb modifiers Discworld inserts
--- between the name and verb when the speaker is in a state like
--- drunkenness ("Kiki totally tells you: ...").
-mud.trigger([==[^[A-Z]\w+(?: [A-Z]\w+)* (?:[a-z]+ )?(?:tells|exclaims to|asks).+?you: ]==], function(m)
+-- Incoming tell / asks / exclaims. The speaker is "<FirstName> <family name>",
+-- and family names are very free-form: any number of words, any case, with
+-- apostrophes and hyphens (e.g. "Fenrir the misspeler", "Gnillot in the
+-- Darrke", "Dacrian didn't do-it", "Gin n Tonique"). So after the always-
+-- capitalised first name we accept a run of further name words of any case via
+-- `(?: [A-Za-z][\w'-]*)*`, then the verb and the framing "you:". The earlier
+-- form required every word past the name to be Capitalised, so live tells from
+-- titled players (the common case) were dropped before route_line ever ran.
+--
+-- Must stay in sync with classifier.is_incoming_tell; tests/classifier_test.lua
+-- exercises the classifier against the full family-name set.
+mud.trigger([==[^[A-Z][\w'-]*(?: [A-Za-z][\w'-]*)* (?:tells|exclaims to|asks).+?you: ]==], function(m)
   if route_line(m.text) then m:gag() end
 end)
 
