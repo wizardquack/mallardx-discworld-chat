@@ -34,7 +34,16 @@ local SOURCES_KEY    = "source_settings_v1"
 local ACTIVE_TAB_KEY = "active_tab_v1"
 local GROUP_KEY      = "group_channel"
 
+local flush_gate = require("flush_gate")
+
+-- How often the flush timer re-evaluates the coalescing gate.
 local PERSIST_DEBOUNCE_MS = 5000
+-- Write the history blob once this many new lines have queued...
+local FLUSH_LINE_BUDGET   = 50
+-- ...or this many seconds after the first un-written change, whichever first.
+-- Bounds worst-case scrollback loss on a crash to ~this window (disconnect and
+-- plugin reload force an immediate flush, so clean exits lose nothing).
+local FLUSH_MAX_AGE_S     = 30
 
 local function init_sources()
   local s = storage.get(SOURCES_KEY)
@@ -55,13 +64,28 @@ local sources_cache  = init_sources()
 local group_channel  = storage.get(GROUP_KEY)
 local history_buf    = storage.get(HISTORY_KEY) or {}
 
-local channels_dirty = false
-local history_dirty  = false
+local channels_dirty   = false
+local history_dirty    = false
+local history_pending  = 0           -- new history entries since the last write
+local last_history_write = os.time()
 
-local function flush()
-  if history_dirty then
+-- Persist dirty buffers. `force` (disconnect / reload) bypasses the history
+-- coalescing gate so a clean exit never drops scrollback; the periodic timer
+-- calls it with no argument and writes history only when the gate opens.
+local function flush(force)
+  local due = flush_gate.history_due({
+    dirty       = history_dirty,
+    force       = force == true,
+    pending     = history_pending,
+    elapsed_s   = os.time() - last_history_write,
+    line_budget = FLUSH_LINE_BUDGET,
+    max_age_s   = FLUSH_MAX_AGE_S,
+  })
+  if due then
     storage.set(HISTORY_KEY, history_buf)
-    history_dirty = false
+    history_dirty      = false
+    history_pending    = 0
+    last_history_write = os.time()
   end
   if channels_dirty then
     storage.set(CHANNELS_KEY, channels_cache)
@@ -77,7 +101,8 @@ end
 local function persist(entry)
   history_buf[#history_buf + 1] = entry
   while #history_buf > HISTORY_MAX do table.remove(history_buf, 1) end
-  history_dirty = true
+  history_dirty   = true
+  history_pending = history_pending + 1
 end
 
 local function replay()
@@ -444,10 +469,13 @@ end)
 -- ---------------------------------------------------------------------
 -- Debounced flush + disconnect flush.
 --
--- Both dirty buffers ride a single 5s timer. `world.on("disconnect")`
--- also fires on plugin reload (see mallard host.rs dispatch_lifecycle),
--- so a fresh code drop won't lose the in-flight buffers either.
+-- A 5s timer re-evaluates the flush gate; history writes coalesce (every
+-- FLUSH_LINE_BUDGET lines or FLUSH_MAX_AGE_S, see flush_gate.lua) so a busy
+-- channel doesn't rewrite the whole scrollback blob every tick. The forced
+-- `world.on("disconnect")` flush — which also fires on plugin reload (see
+-- mallard host.rs dispatch_lifecycle) — bypasses the gate so a clean exit or
+-- fresh code drop never loses the in-flight buffers.
 -- ---------------------------------------------------------------------
 
 mud.every(PERSIST_DEBOUNCE_MS, flush)
-world.on("disconnect", flush)
+world.on("disconnect", function() flush(true) end)
