@@ -1,4 +1,4 @@
--- Pure-Lua tests for flush_gate.history_due.
+-- Pure-Lua tests for flush_gate.write_due.
 --
 -- Run with: lua tests/flush_gate_test.lua
 --
@@ -30,23 +30,23 @@ local function opts(o)
 end
 
 -- Clean state: nothing queued → never writes.
-check("not dirty never writes", flush_gate.history_due(opts({ dirty = false, force = true, pending = 999, elapsed_s = 999 })), false)
+check("not dirty never writes", flush_gate.write_due(opts({ dirty = false, force = true, pending = 999, elapsed_s = 999 })), false)
 
 -- Dirty but under both thresholds → coalesce (skip this tick).
-check("dirty under thresholds waits", flush_gate.history_due(opts({ dirty = true, pending = 1, elapsed_s = 5 })), false)
+check("dirty under thresholds waits", flush_gate.write_due(opts({ dirty = true, pending = 1, elapsed_s = 5 })), false)
 
 -- Force always writes when dirty (disconnect / reload).
-check("force writes when dirty", flush_gate.history_due(opts({ dirty = true, force = true, pending = 0, elapsed_s = 0 })), true)
+check("force writes when dirty", flush_gate.write_due(opts({ dirty = true, force = true, pending = 0, elapsed_s = 0 })), true)
 -- ...but force on a clean buffer still writes nothing.
-check("force on clean writes nothing", flush_gate.history_due(opts({ dirty = false, force = true })), false)
+check("force on clean writes nothing", flush_gate.write_due(opts({ dirty = false, force = true })), false)
 
 -- Line budget reached → write.
-check("line budget triggers", flush_gate.history_due(opts({ dirty = true, pending = 50, elapsed_s = 1 })), true)
-check("just under line budget waits", flush_gate.history_due(opts({ dirty = true, pending = 49, elapsed_s = 1 })), false)
+check("line budget triggers", flush_gate.write_due(opts({ dirty = true, pending = 50, elapsed_s = 1 })), true)
+check("just under line budget waits", flush_gate.write_due(opts({ dirty = true, pending = 49, elapsed_s = 1 })), false)
 
 -- Max age reached → write even with few lines.
-check("max age triggers", flush_gate.history_due(opts({ dirty = true, pending = 1, elapsed_s = 30 })), true)
-check("just under max age waits", flush_gate.history_due(opts({ dirty = true, pending = 1, elapsed_s = 29 })), false)
+check("max age triggers", flush_gate.write_due(opts({ dirty = true, pending = 1, elapsed_s = 30 })), true)
+check("just under max age waits", flush_gate.write_due(opts({ dirty = true, pending = 1, elapsed_s = 29 })), false)
 
 if failures == 0 then
   print("all flush_gate tests passed")

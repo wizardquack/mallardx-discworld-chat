@@ -68,12 +68,14 @@ local channels_dirty   = false
 local history_dirty    = false
 local history_pending  = 0           -- new history entries since the last write
 local last_history_write = os.time()
+local channels_pending   = 0         -- channel-registry bumps since the last write
+local last_channels_write = os.time()
 
 -- Persist dirty buffers. `force` (disconnect / reload) bypasses the history
 -- coalescing gate so a clean exit never drops scrollback; the periodic timer
 -- calls it with no argument and writes history only when the gate opens.
 local function flush(force)
-  local due = flush_gate.history_due({
+  local due = flush_gate.write_due({
     dirty       = history_dirty,
     force       = force == true,
     pending     = history_pending,
@@ -87,9 +89,24 @@ local function flush(force)
     history_pending    = 0
     last_history_write = os.time()
   end
-  if channels_dirty then
+  -- The debounced channels write only ever carries ephemeral last_seen/count
+  -- bumps from ensure_channel_entry — structural changes (toggles, add, remove)
+  -- persist eagerly at their call sites. A busy channel dirties this every line,
+  -- so coalesce it through the same gate rather than rewriting the whole
+  -- registry blob every 5s tick; force still flushes on disconnect/reload.
+  local channels_due = flush_gate.write_due({
+    dirty       = channels_dirty,
+    force       = force == true,
+    pending     = channels_pending,
+    elapsed_s   = os.time() - last_channels_write,
+    line_budget = FLUSH_LINE_BUDGET,
+    max_age_s   = FLUSH_MAX_AGE_S,
+  })
+  if channels_due then
     storage.set(CHANNELS_KEY, channels_cache)
-    channels_dirty = false
+    channels_dirty      = false
+    channels_pending    = 0
+    last_channels_write = os.time()
   end
 end
 
@@ -144,7 +161,8 @@ local function ensure_channel_entry(name)
   if entry.notify == nil then entry.notify = false end
   entry.last_seen = os.time()
   entry.count = (entry.count or 0) + 1
-  channels_dirty = true
+  channels_dirty   = true
+  channels_pending = channels_pending + 1
   return entry
 end
 
@@ -165,7 +183,9 @@ local function set_group(name)
       -- settings list) — flush immediately rather than waiting on the
       -- debounce, and clear the dirty flag along with it.
       storage.set(CHANNELS_KEY, channels_cache)
-      channels_dirty = false
+      channels_dirty      = false
+      channels_pending    = 0
+      last_channels_write = os.time()
       broadcast_settings()
     end
   end
@@ -219,7 +239,9 @@ panel:on_message("settings_update", function(delta)
     -- crash within the next 5s. Clears the dirty flag because the
     -- write also persists any debounced bumps that piggybacked on it.
     storage.set(CHANNELS_KEY, channels_cache)
-    channels_dirty = false
+    channels_dirty      = false
+    channels_pending    = 0
+    last_channels_write = os.time()
   end
 
   if type(delta.source) == "table" then
