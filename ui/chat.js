@@ -605,6 +605,23 @@ panel.on("settings", (payload) => {
   if (view === "settings") renderSettings();
 });
 
+// Keyboard tab navigation. main.lua's chat_tab_<n> / chat_tab_last
+// commands (bound by the "chat-tab-nav" keymap layer) post these. We
+// resolve the 1-based strip position against the *current* tab order
+// and reuse switchTab(), so seen-marking, re-render, and active_tab
+// persistence all happen exactly as on a click. Out-of-range = no-op.
+panel.on("goto_index", (payload) => {
+  const index = payload && payload.index;
+  const id = tabIdForIndex(computeTabOrder(), index);
+  if (id) switchTab(id);
+});
+
+panel.on("goto_last", () => {
+  const order = computeTabOrder();
+  const id = tabIdForIndex(order, order.length);
+  if (id) switchTab(id);
+});
+
 window.addEventListener("resize", () => renderTabs());
 
 document.addEventListener("click", (e) => {
