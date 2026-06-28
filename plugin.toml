@@ -35,3 +35,62 @@ entry              = "ui/chat.html"
 default_dock       = "below"
 default_dock_after = "output"
 default_size       = { width = 800, height = 200 }
+
+[[keymaps]]
+name = "chat-tab-nav"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+1"
+command = "chat_tab_1"
+label   = "Chat: go to tab 1 (All)"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+2"
+command = "chat_tab_2"
+label   = "Chat: go to tab 2 (Tells)"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+3"
+command = "chat_tab_3"
+label   = "Chat: go to tab 3 (Group)"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+4"
+command = "chat_tab_4"
+label   = "Chat: go to tab 4"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+5"
+command = "chat_tab_5"
+label   = "Chat: go to tab 5"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+6"
+command = "chat_tab_6"
+label   = "Chat: go to tab 6"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+7"
+command = "chat_tab_7"
+label   = "Chat: go to tab 7"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+8"
+command = "chat_tab_8"
+label   = "Chat: go to tab 8"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+9"
+command = "chat_tab_9"
+label   = "Chat: go to tab 9"
+
+[[keymaps.bindings]]
+combo   = "Ctrl+Shift+0"
+command = "chat_tab_last"
+label   = "Chat: go to last tab (Channels)"
+
+[settings.tab_keybindings]
+type    = "bool"
+default = true
+label   = "Tab navigation keybindings"
+description = "When on, Ctrl+Shift+1..9 jump to the 1st–9th chat tab and Ctrl+Shift+0 jumps to the last tab (Channels). Edit the combos in Settings → Keymaps (layer 'chat-tab-nav'). Turn off to leave your keymap untouched."

@@ -272,6 +272,43 @@ panel:on_message("active_tab", function(payload)
 end)
 
 -- ---------------------------------------------------------------------
+-- Keyboard tab navigation.
+--
+-- The "chat-tab-nav" keymap layer (plugin.toml) binds Ctrl+Shift+1..9 /
+-- Ctrl+Shift+0 to these commands. Each posts a 1-based strip position to
+-- the iframe, which maps it to a tab and switches. Commands are hidden
+-- from the command palette — they exist only as keymap targets. The
+-- `tab_keybindings` setting is the single source of truth for whether the
+-- layer is active, so a reload never re-enables a layer the user disabled.
+-- ---------------------------------------------------------------------
+
+for i = 1, 9 do
+  mud.command("chat_tab_" .. i, function()
+    panel:post("goto_index", { index = i })
+  end, { hidden = true })
+end
+
+mud.command("chat_tab_last", function()
+  panel:post("goto_last", {})
+end, { hidden = true })
+
+local function apply_tab_keymap()
+  if settings.get("tab_keybindings") then
+    mud.keymap.activate("chat-tab-nav")
+  else
+    mud.keymap.deactivate("chat-tab-nav")
+  end
+end
+
+settings.on("change", function(key, new_val)
+  if key == "tab_keybindings" then
+    apply_tab_keymap()
+  end
+end)
+
+apply_tab_keymap()
+
+-- ---------------------------------------------------------------------
 -- Line dispatch.
 -- ---------------------------------------------------------------------
 
