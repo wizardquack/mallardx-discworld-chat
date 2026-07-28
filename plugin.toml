@@ -1,6 +1,6 @@
 id = "net.mallard.discworld-chat"
 name = "Discworld Chat"
-version = "0.4.0"
+version = "0.4.1"
 description = "A tabbed chat panel for capturing tells, group chatter, and talker chatter."
 language = "lua"
 entry = "src/main.lua"
