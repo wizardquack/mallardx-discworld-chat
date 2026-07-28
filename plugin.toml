@@ -27,7 +27,7 @@ notifications = true
 match = ["discworld.starturtle.net:*"]
 
 [gmcp]
-advertise = ["char.info"]
+advertise = ["char.info 1"]
 
 [panels.chat]
 title              = "Chat"
