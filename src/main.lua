@@ -166,9 +166,11 @@ end
 -- and was a large fraction of the p50 cost.
 local function ensure_channel_entry(name)
   local entry = channels_cache[name]
+  local created = false
   if not entry then
     entry = { listen = true, gag_main = false, pinned = false, sound = false, notify = false, count = 0 }
     channels_cache[name] = entry
+    created = true
   end
   -- Defensive: backfill `sound`/`notify` on pre-existing entries written
   -- before the fields were added so chime/notify decisions don't
@@ -179,6 +181,11 @@ local function ensure_channel_entry(name)
   entry.count = (entry.count or 0) + 1
   channels_dirty   = true
   channels_pending = channels_pending + 1
+  -- Only on first sighting, so this stays off the per-line path: the panel
+  -- otherwise never hears about a channel discovered after its handshake,
+  -- and the settings list stays stale until the iframe next mounts --
+  -- meaning traffic you can see in the scrollback has no row to configure.
+  if created then broadcast_settings() end
   return entry
 end
 
