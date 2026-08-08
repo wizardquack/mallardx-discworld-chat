@@ -11,6 +11,16 @@
   --border:       #2a2a2a;
   --accent:       #4ade80;
   --link:         #66ccff;
+
+  /* Tag colours resolve against these (see ui/colour.js). The host pushes
+     --ansi-0..15 with the rest of the theme, but the colour picker renders
+     17 swatches the moment the settings view opens — without fallbacks they
+     all collapse to --link until the first set-theme lands, and the menu
+     looks broken. Values match the host's own defaults. */
+  --ansi-0:  #000000;  --ansi-1:  #cc0000;  --ansi-2:  #00cc00;  --ansi-3:  #cccc00;
+  --ansi-4:  #4466cc;  --ansi-5:  #cc00cc;  --ansi-6:  #00cccc;  --ansi-7:  #cccccc;
+  --ansi-8:  #555555;  --ansi-9:  #ff5555;  --ansi-10: #55ff55;  --ansi-11: #ffff55;
+  --ansi-12: #5577ff;  --ansi-13: #ff55ff;  --ansi-14: #55ffff;  --ansi-15: #ffffff;
 }
 
 html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--fg); }
@@ -248,6 +258,7 @@ body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
   justify-content: center;
 }
 .settings-colour:hover { border-color: var(--fg-muted); }
+.settings-colour:focus-visible { border-color: var(--accent); outline: none; }
 
 .swatch {
   width: 12px;
@@ -293,6 +304,16 @@ body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
 .colour-option:last-child { border-bottom: 0; }
 .colour-option:hover { background: var(--bg); color: var(--fg); }
 .colour-option.selected { color: var(--accent); }
+/* Keyboard navigation is the primary way through this list, so the focused
+   row needs the same weight as a hover -- the default ring alone is easy to
+   lose against the swatches. `inset` so it can't be clipped by the menu's
+   own overflow scroll. */
+.colour-option:focus-visible {
+  background: var(--bg);
+  color: var(--fg);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
 
 /* --- Overflow popover --- */
 

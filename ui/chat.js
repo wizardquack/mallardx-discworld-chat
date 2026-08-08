@@ -25,26 +25,8 @@ const addChannelEl = document.getElementById("add-channel");
 const overflowPopover = document.getElementById("overflow-popover");
 const colourMenu = document.getElementById("colour-menu");
 
-// Tag colours are ANSI palette slots, not hex. The host pushes --ansi-0..15
-// onto this iframe with the rest of the theme, and Discworld's channel
-// colours are ANSI as well, so slot N paints the tag in the same shade the
-// main output pane uses for that channel — and re-resolves on a theme
-// change instead of freezing one hard-coded value. Names follow the usual
-// 16-colour convention; slot order is the ANSI order, so the menu reads
-// the same as any other palette the user has seen.
-const ANSI_COLOURS = [
-  "Black",   "Red",         "Green",        "Yellow",
-  "Blue",    "Magenta",     "Cyan",         "White",
-  "Grey",    "Bright red",  "Bright green", "Bright yellow",
-  "Bright blue", "Bright magenta", "Bright cyan", "Bright white",
-];
-const COLOUR_DEFAULT = -1; // clears back to the theme's --link
-
-function colourVar(slot) {
-  return (slot === null || slot === undefined || slot === COLOUR_DEFAULT)
-    ? "var(--link)"
-    : `var(--ansi-${slot}, var(--link))`;
-}
+// ANSI_COLOURS / COLOUR_DEFAULT / colourVar / tagColourSlot /
+// colourSignature come from colour.js, loaded ahead of this script.
 
 function pad(n) { return n < 10 ? "0" + n : "" + n; }
 function formatTime(unix) {
@@ -184,27 +166,6 @@ function tabLabel(tabId) {
   return tabId;
 }
 
-// Which palette slot paints this line's tag, or null for the default.
-//
-// Group is checked before the channel registry, and deliberately: a group
-// line's tag shows the current group's name, which is ad hoc and different
-// for every group joined. Colouring those per channel would mean re-picking
-// a colour for each new group -- and group lines never reach the registry
-// anyway. One colour for "group chatter" is the useful unit. Everything
-// else resolves per channel, and the literal "[tells]" tag has no channel,
-// so it comes off the tells source entry.
-function tagColourSlot(tab, channel) {
-  const src = tab === "group" ? settings.sources.group
-            : tab === "tells" ? settings.sources.tells
-            : null;
-  if (src) return src.colour !== undefined ? src.colour : null;
-  if (channel) {
-    const entry = settings.channels[channel];
-    return entry && entry.colour !== undefined ? entry.colour : null;
-  }
-  return null;
-}
-
 function renderLine({ tab, channel, text, ts }) {
   const el = document.createElement("div");
   el.className = "line";
@@ -223,7 +184,7 @@ function renderLine({ tab, channel, text, ts }) {
     const tagEl = document.createElement("span");
     tagEl.className = "tag";
     tagEl.textContent = tag;
-    const slot = tagColourSlot(tab, channel);
+    const slot = tagColourSlot(settings, tab, channel);
     if (slot !== null) tagEl.style.color = colourVar(slot);
     el.appendChild(tagEl);
   }
@@ -335,23 +296,6 @@ function rerenderActive({ keepScroll = false } = {}) {
   scrollback.scrollTop = (keepScroll && !wasPinned) ? prevTop : scrollback.scrollHeight;
 }
 
-// Tag colours are read at render time, so a line already on screen keeps
-// whatever colour was in force when it was drawn. Lines replay before the
-// first `settings` message arrives, which means the opening scrollback is
-// always drawn with no colours at all -- hence the repaint below, gated on
-// the assignments actually having changed so unrelated settings traffic
-// doesn't repaint (and re-anchor) the view for nothing.
-function colourSignature() {
-  const parts = [];
-  for (const key of ["tells", "group"]) {
-    const s = settings.sources[key];
-    parts.push(key + ":" + (s && s.colour !== undefined ? s.colour : ""));
-  }
-  for (const [name, e] of Object.entries(settings.channels)) {
-    if (e && e.colour !== undefined) parts.push(name + ":" + e.colour);
-  }
-  return parts.sort().join("|");
-}
 let lastColourSignature = null;
 
 function switchTab(t) {
@@ -496,23 +440,54 @@ function sendUpdate(delta) {
   panel.post("settings_update", delta);
 }
 
-function hideColourMenu() {
-  colourMenu.hidden = true;
-  colourMenu.replaceChildren();
-  colourMenu.dataset.owner = "";
+// Which row's swatch owns the open menu, as a *stable* key ("source:tells",
+// "channel:foo") rather than an element or a sequence number. A settings
+// broadcast rebuilds every row, destroying the button the menu is anchored
+// to -- the key still resolves to that row's replacement, so the menu can be
+// put back where it was. See the note in renderSettings().
+let colourMenuOwner = null;
+
+// key -> { btn, current, onPick }, repopulated on every renderSettings()
+// pass. This is what re-anchoring resolves against.
+const colourPickers = new Map();
+
+// Rebuilding the rows can clamp settingsEl.scrollTop (a removed channel
+// shortens the list), and the scroll event that produces is dispatched in
+// the next rendering update -- after renderSettings has already re-anchored
+// the menu, so the scroll-to-close handler would shut it again immediately.
+// rAF callbacks run after scroll dispatch in that same update, so clearing
+// the flag there covers exactly the rebuild's own scroll and nothing later.
+let suppressScrollClose = false;
+function suppressScrollCloseForOneFrame() {
+  suppressScrollClose = true;
+  requestAnimationFrame(() => { suppressScrollClose = false; });
 }
 
-// Identifies which swatch owns the open menu, so clicking that same swatch
-// again closes it instead of tearing down and rebuilding an identical list.
-let colourPickerSeq = 0;
+// `restoreFocus` hands focus back to the swatch, for the closes that are the
+// user finishing with the menu (Escape, Tab, picking a colour). Closes they
+// didn't ask for -- clicking elsewhere, a rebuild, a tab switch -- leave
+// focus alone rather than yanking it across the panel.
+function hideColourMenu({ restoreFocus = false } = {}) {
+  const owner = colourMenuOwner;
+  colourMenuOwner = null;
+  colourMenu.hidden = true;
+  colourMenu.replaceChildren();
+  const picker = owner !== null ? colourPickers.get(owner) : null;
+  if (picker) {
+    picker.btn.setAttribute("aria-expanded", "false");
+    if (restoreFocus) picker.btn.focus();
+  }
+}
 
-// A swatch button that opens the colour list. `current` is a slot or null;
-// `onPick` receives a slot or COLOUR_DEFAULT.
-function makeColourPicker(current, onPick) {
+// A swatch button that opens the colour list. `key` identifies the row,
+// `current` is a slot or null, `onPick` receives a slot or COLOUR_DEFAULT.
+function makeColourPicker(key, current, onPick) {
   const btn = document.createElement("button");
   btn.className = "settings-colour";
   btn.title = "Tag colour";
   btn.setAttribute("aria-label", "Tag colour");
+  btn.setAttribute("aria-haspopup", "menu");
+  btn.setAttribute("aria-expanded", "false");
   const sw = document.createElement("span");
   sw.className = "swatch";
   sw.style.background = colourVar(current);
@@ -521,25 +496,43 @@ function makeColourPicker(current, onPick) {
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     // Second click on the same swatch closes rather than reopening.
-    const id = String(btn.dataset.pickerId);
-    if (!colourMenu.hidden && colourMenu.dataset.owner === id) {
-      hideColourMenu();
+    if (colourMenuOwner === key) {
+      hideColourMenu({ restoreFocus: true });
       return;
     }
-    openColourMenu(btn, current, onPick);
+    openColourMenu(key);
   });
-  btn.dataset.pickerId = String(++colourPickerSeq);
+
+  colourPickers.set(key, { btn, current, onPick });
   return btn;
 }
 
-function openColourMenu(anchorBtn, current, onPick) {
+// Opens (or re-anchors) the menu for `key`. `focusIndex` restores which
+// option was focused across a rebuild; without it focus lands on the
+// row's current colour, per the usual menu-button pattern.
+function openColourMenu(key, { focusIndex = null } = {}) {
+  const picker = colourPickers.get(key);
+  // The row can be gone -- the channel was removed while its menu was open.
+  if (!picker) return;
+  const { btn, current, onPick } = picker;
+
+  if (colourMenuOwner !== null && colourMenuOwner !== key) hideColourMenu();
   colourMenu.replaceChildren();
-  colourMenu.dataset.owner = String(anchorBtn.dataset.pickerId);
+  colourMenuOwner = key;
+  btn.setAttribute("aria-expanded", "true");
+
+  const selected = (current === null || current === undefined) ? COLOUR_DEFAULT : current;
+  let selectedIndex = 0;
 
   function addOption(slot, label) {
     const row = document.createElement("button");
-    row.className = "colour-option"
-      + ((current === null ? COLOUR_DEFAULT : current) === slot ? " selected" : "");
+    const isSelected = selected === slot;
+    row.className = "colour-option" + (isSelected ? " selected" : "");
+    row.setAttribute("role", "menuitem");
+    if (isSelected) {
+      row.setAttribute("aria-current", "true");
+      selectedIndex = colourMenu.childElementCount;
+    }
     const sw = document.createElement("span");
     sw.className = "swatch";
     sw.style.background = colourVar(slot);
@@ -547,7 +540,7 @@ function openColourMenu(anchorBtn, current, onPick) {
     row.appendChild(document.createTextNode(label));
     row.addEventListener("click", (e) => {
       e.stopPropagation();
-      hideColourMenu();
+      hideColourMenu({ restoreFocus: true });
       onPick(slot);
     });
     colourMenu.appendChild(row);
@@ -559,7 +552,7 @@ function openColourMenu(anchorBtn, current, onPick) {
   colourMenu.hidden = false;
   // Positioned after unhiding so the height is measurable: the list is tall,
   // so flip it above the swatch when there isn't room below.
-  const r = anchorBtn.getBoundingClientRect();
+  const r = btn.getBoundingClientRect();
   const h = colourMenu.offsetHeight;
   const below = window.innerHeight - r.bottom;
   colourMenu.style.top = (below >= h || r.top < h)
@@ -567,7 +560,45 @@ function openColourMenu(anchorBtn, current, onPick) {
     : `${Math.max(0, r.top - h)}px`;
   colourMenu.style.left =
     `${Math.max(0, Math.min(r.left, window.innerWidth - colourMenu.offsetWidth))}px`;
+
+  // Focus moves into the menu on open (mouse or keyboard), which is what
+  // makes Escape/Tab-to-return coherent and is why the menu doesn't need to
+  // sit in the static tab order.
+  const options = colourMenu.children;
+  const target = focusIndex !== null
+    ? options[Math.min(focusIndex, options.length - 1)]
+    : options[selectedIndex];
+  if (target) target.focus();
 }
+
+// Arrow/Home/End move within the open menu; Tab leaves it entirely, handing
+// focus back to the swatch so the browser's normal order continues from
+// there rather than from the end of <body> where the menu lives.
+colourMenu.addEventListener("keydown", (e) => {
+  if (colourMenu.hidden) return;
+  const options = Array.from(colourMenu.children);
+  if (options.length === 0) return;
+  const last = options.length - 1;
+  const i = options.indexOf(document.activeElement);
+
+  if (e.key === "ArrowDown") {
+    e.preventDefault();
+    options[i < 0 || i === last ? 0 : i + 1].focus();
+  } else if (e.key === "ArrowUp") {
+    e.preventDefault();
+    options[i <= 0 ? last : i - 1].focus();
+  } else if (e.key === "Home") {
+    e.preventDefault();
+    options[0].focus();
+  } else if (e.key === "End") {
+    e.preventDefault();
+    options[last].focus();
+  } else if (e.key === "Tab") {
+    // No preventDefault: focus is back on the swatch by the time the
+    // default action runs, so Tab advances from there.
+    hideColourMenu({ restoreFocus: true });
+  }
+});
 
 function renderSourceRow(label, key) {
   const row = document.createElement("div");
@@ -597,6 +628,7 @@ function renderSourceRow(label, key) {
 
   const src = settings.sources[key] || {};
   row.appendChild(makeColourPicker(
+    "source:" + key,
     src.colour !== undefined ? src.colour : null,
     (slot) => sendUpdate({ source: { [key]: { colour: slot } } })
   ));
@@ -642,6 +674,7 @@ function renderChannelRow(name, entry) {
   row.appendChild(toggles);
 
   row.appendChild(makeColourPicker(
+    "channel:" + name,
     entry.colour !== undefined ? entry.colour : null,
     (slot) => sendUpdate({ channel: { name, colour: slot } })
   ));
@@ -710,9 +743,24 @@ function ensureAddChannelRow() {
 }
 
 function renderSettings() {
-  // Every settings broadcast rebuilds these rows, which throws away the
-  // button the open menu is anchored to.
+  // Every settings broadcast rebuilds these rows, throwing away both the
+  // button an open menu is anchored to and whatever had focus. Those
+  // broadcasts are no longer only user-driven: a line from a never-before-
+  // seen channel makes the Lua side re-announce, so ambient MUD traffic
+  // lands here too -- and closing the picker mid-choice (or dropping focus
+  // to <body> after a pick) is exactly what that shouldn't do. Remember
+  // what was open and focused, then restore it against the new rows.
+  const reopenKey = colourMenuOwner;
+  const focusIndex = reopenKey !== null
+    ? Array.from(colourMenu.children).indexOf(document.activeElement)
+    : -1;
+  let refocusKey = null;
+  for (const [key, picker] of colourPickers) {
+    if (picker.btn === document.activeElement) { refocusKey = key; break; }
+  }
+
   hideColourMenu();
+  colourPickers.clear();
   sourcesEl.replaceChildren();
   sourcesEl.appendChild(renderSourceRow("Tells", "tells"));
   sourcesEl.appendChild(renderSourceRow("Group", "group"));
@@ -731,6 +779,14 @@ function renderSettings() {
     channelsEl.appendChild(empty);
   } else {
     for (const [name, entry] of entries) channelsEl.appendChild(renderChannelRow(name, entry));
+  }
+
+  if (reopenKey !== null) {
+    suppressScrollCloseForOneFrame();
+    openColourMenu(reopenKey, { focusIndex: focusIndex >= 0 ? focusIndex : null });
+  } else if (refocusKey !== null) {
+    const picker = colourPickers.get(refocusKey);
+    if (picker) picker.btn.focus();
   }
 }
 
@@ -765,7 +821,7 @@ panel.on("settings", (payload) => {
     }
   }
   renderTabs();
-  const sig = colourSignature();
+  const sig = colourSignature(settings);
   if (sig !== lastColourSignature) {
     lastColourSignature = sig;
     if (view === "chat") rerenderActive({ keepScroll: true });
@@ -801,14 +857,19 @@ document.addEventListener("click", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !colourMenu.hidden) hideColourMenu();
+  // Escape is the user dismissing the menu, so focus goes back to the
+  // swatch they opened it from.
+  if (e.key === "Escape" && !colourMenu.hidden) hideColourMenu({ restoreFocus: true });
 });
 
 // The menu is positioned in viewport coordinates against a row that scrolls,
 // so anything that moves the row underneath it must close it rather than
-// leave it floating somewhere arbitrary.
-window.addEventListener("resize", hideColourMenu);
-settingsEl.addEventListener("scroll", hideColourMenu, true);
+// leave it floating somewhere arbitrary. Wrapped rather than passed
+// directly: these fire with an Event argument, which is not an options bag.
+window.addEventListener("resize", () => hideColourMenu());
+settingsEl.addEventListener("scroll", () => {
+  if (!suppressScrollClose) hideColourMenu();
+}, true);
 
 renderTabs();
 
