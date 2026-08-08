@@ -45,6 +45,22 @@ local FLUSH_LINE_BUDGET   = 50
 -- plugin reload force an immediate flush, so clean exits lose nothing).
 local FLUSH_MAX_AGE_S     = 30
 
+-- Tag colours are ANSI palette slots (0-15), not hex: the host pushes
+-- --ansi-0..15 onto the panel iframe as theme vars, and Discworld's own
+-- channel colours are ANSI too, so a slot renders the tag in exactly the
+-- shade the main output pane uses -- and follows the user's theme. nil
+-- means "no choice made", which the panel draws in --link as before.
+-- The panel sends COLOUR_DEFAULT to clear a choice, since a JSON null
+-- can't survive the round trip as a distinct-from-absent table value.
+local COLOUR_DEFAULT = -1
+
+local function sanitise_colour(v)
+  if type(v) ~= "number" then return nil end
+  local n = math.floor(v)
+  if n < 0 or n > 15 then return nil end
+  return n
+end
+
 local function init_sources()
   local s = storage.get(SOURCES_KEY)
   if not s then s = {} end
@@ -217,8 +233,14 @@ panel:on_message("ready", function(payload)
 end)
 
 -- Delta shape (any field optional):
---   { channel = { name = "foo", listen = bool, gag_main = bool, pinned = bool, sound = bool, notify = bool, remove = bool },
---     source  = { tells = { gag_main = bool, sound = bool, notify = bool }, group = { gag_main = bool, sound = bool, notify = bool } } }
+--   { channel = { name = "foo", listen = bool, gag_main = bool, pinned = bool, sound = bool, notify = bool, colour = 0..15|-1, remove = bool },
+--     source  = { tells = { gag_main = bool, sound = bool, notify = bool, colour = 0..15|-1 }, group = { … same … } } }
+--
+-- Group colour lives on the source, not the channel: a group's tag carries
+-- whatever the current group is called, those names are ad hoc and change
+-- with every group, and group lines never enter the channel registry at all
+-- (ensure_channel_entry runs only for the `channels` branch). A per-channel
+-- colour could therefore never be set for them.
 panel:on_message("settings_update", function(delta)
   if type(delta) ~= "table" then return end
 
@@ -233,6 +255,11 @@ panel:on_message("settings_update", function(delta)
       if delta.channel.pinned   ~= nil then entry.pinned   = delta.channel.pinned   and true or false end
       if delta.channel.sound    ~= nil then entry.sound    = delta.channel.sound    and true or false end
       if delta.channel.notify   ~= nil then entry.notify   = delta.channel.notify   and true or false end
+      if delta.channel.colour   ~= nil then
+        -- COLOUR_DEFAULT (and any out-of-range value) clears back to nil.
+        entry.colour = delta.channel.colour ~= COLOUR_DEFAULT
+          and sanitise_colour(delta.channel.colour) or nil
+      end
       channels_cache[name] = entry
     end
     -- User toggled a checkbox; flush eagerly so the change survives a
@@ -249,11 +276,19 @@ panel:on_message("settings_update", function(delta)
       if delta.source.tells.gag_main ~= nil then sources_cache.tells.gag_main = delta.source.tells.gag_main and true or false end
       if delta.source.tells.sound    ~= nil then sources_cache.tells.sound    = delta.source.tells.sound    and true or false end
       if delta.source.tells.notify   ~= nil then sources_cache.tells.notify   = delta.source.tells.notify   and true or false end
+      if delta.source.tells.colour   ~= nil then
+        sources_cache.tells.colour = delta.source.tells.colour ~= COLOUR_DEFAULT
+          and sanitise_colour(delta.source.tells.colour) or nil
+      end
     end
     if type(delta.source.group) == "table" then
       if delta.source.group.gag_main ~= nil then sources_cache.group.gag_main = delta.source.group.gag_main and true or false end
       if delta.source.group.sound    ~= nil then sources_cache.group.sound    = delta.source.group.sound    and true or false end
       if delta.source.group.notify   ~= nil then sources_cache.group.notify   = delta.source.group.notify   and true or false end
+      if delta.source.group.colour   ~= nil then
+        sources_cache.group.colour = delta.source.group.colour ~= COLOUR_DEFAULT
+          and sanitise_colour(delta.source.group.colour) or nil
+      end
     end
     storage.set(SOURCES_KEY, sources_cache)
   end

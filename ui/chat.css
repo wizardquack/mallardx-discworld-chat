@@ -229,6 +229,71 @@ body { display: flex; flex-direction: column; overflow: hidden; border: 0; }
   padding: 6px;
 }
 
+/* --- Tag colour picker --- */
+
+/* The row trigger is the swatch alone -- the colour is its own label, and a
+   name here would push the already-busy toggle row wider. */
+.settings-colour {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  padding: 0;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.settings-colour:hover { border-color: var(--fg-muted); }
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  /* Dark slots (ansi-0 especially) would vanish against the panel without
+     an outline of their own. */
+  box-shadow: inset 0 0 0 1px rgb(128 128 128 / 45%);
+  flex: 0 0 auto;
+}
+
+.colour-menu {
+  position: fixed;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 11; /* above the overflow popover */
+  min-width: 150px;
+  /* border-box so the 1px borders count inside max-height -- otherwise the
+     menu measures 2px taller than the panel it has to fit in. The panel is
+     often only ~200px tall, so the list scrolls rather than being clipped. */
+  box-sizing: border-box;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+.colour-option {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  padding: 5px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.colour-option:last-child { border-bottom: 0; }
+.colour-option:hover { background: var(--bg); color: var(--fg); }
+.colour-option.selected { color: var(--accent); }
+
 /* --- Overflow popover --- */
 
 .overflow-popover {

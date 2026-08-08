@@ -23,6 +23,28 @@ const sourcesEl = document.getElementById("sources");
 const channelsEl = document.getElementById("channels");
 const addChannelEl = document.getElementById("add-channel");
 const overflowPopover = document.getElementById("overflow-popover");
+const colourMenu = document.getElementById("colour-menu");
+
+// Tag colours are ANSI palette slots, not hex. The host pushes --ansi-0..15
+// onto this iframe with the rest of the theme, and Discworld's channel
+// colours are ANSI as well, so slot N paints the tag in the same shade the
+// main output pane uses for that channel — and re-resolves on a theme
+// change instead of freezing one hard-coded value. Names follow the usual
+// 16-colour convention; slot order is the ANSI order, so the menu reads
+// the same as any other palette the user has seen.
+const ANSI_COLOURS = [
+  "Black",   "Red",         "Green",        "Yellow",
+  "Blue",    "Magenta",     "Cyan",         "White",
+  "Grey",    "Bright red",  "Bright green", "Bright yellow",
+  "Bright blue", "Bright magenta", "Bright cyan", "Bright white",
+];
+const COLOUR_DEFAULT = -1; // clears back to the theme's --link
+
+function colourVar(slot) {
+  return (slot === null || slot === undefined || slot === COLOUR_DEFAULT)
+    ? "var(--link)"
+    : `var(--ansi-${slot}, var(--link))`;
+}
 
 function pad(n) { return n < 10 ? "0" + n : "" + n; }
 function formatTime(unix) {
@@ -162,6 +184,27 @@ function tabLabel(tabId) {
   return tabId;
 }
 
+// Which palette slot paints this line's tag, or null for the default.
+//
+// Group is checked before the channel registry, and deliberately: a group
+// line's tag shows the current group's name, which is ad hoc and different
+// for every group joined. Colouring those per channel would mean re-picking
+// a colour for each new group -- and group lines never reach the registry
+// anyway. One colour for "group chatter" is the useful unit. Everything
+// else resolves per channel, and the literal "[tells]" tag has no channel,
+// so it comes off the tells source entry.
+function tagColourSlot(tab, channel) {
+  const src = tab === "group" ? settings.sources.group
+            : tab === "tells" ? settings.sources.tells
+            : null;
+  if (src) return src.colour !== undefined ? src.colour : null;
+  if (channel) {
+    const entry = settings.channels[channel];
+    return entry && entry.colour !== undefined ? entry.colour : null;
+  }
+  return null;
+}
+
 function renderLine({ tab, channel, text, ts }) {
   const el = document.createElement("div");
   el.className = "line";
@@ -173,9 +216,17 @@ function renderLine({ tab, channel, text, ts }) {
     if (body.startsWith(bracketPrefix)) body = body.slice(bracketPrefix.length);
     else if (body.startsWith(parenPrefix)) body = body.slice(parenPrefix.length);
   }
-  el.innerHTML =
-    `<span class="ts">${formatTime(ts)}</span>` +
-    (tag ? `<span class="tag">${tag}</span>` : "");
+  el.innerHTML = `<span class="ts">${formatTime(ts)}</span>`;
+  if (tag) {
+    // Built as a node rather than interpolated: the tag carries a
+    // MUD-supplied channel name, and it now carries a style too.
+    const tagEl = document.createElement("span");
+    tagEl.className = "tag";
+    tagEl.textContent = tag;
+    const slot = tagColourSlot(tab, channel);
+    if (slot !== null) tagEl.style.color = colourVar(slot);
+    el.appendChild(tagEl);
+  }
   el.appendChild(renderTextWithLinks(body));
   return el;
 }
@@ -272,16 +323,41 @@ function appendToActive(entry) {
   if (wasPinned) scrollback.scrollTop = scrollback.scrollHeight;
 }
 
-function rerenderActive() {
+function rerenderActive({ keepScroll = false } = {}) {
+  const prevTop = scrollback.scrollTop;
+  const wasPinned = isPinnedToBottom();
   scrollback.replaceChildren();
   const buf = buffers[activeTab] || [];
   for (const e of buf) scrollback.appendChild(renderLine(e));
-  scrollback.scrollTop = scrollback.scrollHeight;
+  // A tab switch always lands at the newest line. A repaint in place (a
+  // colour change) keeps the reader where they were unless they were
+  // already following the bottom.
+  scrollback.scrollTop = (keepScroll && !wasPinned) ? prevTop : scrollback.scrollHeight;
 }
+
+// Tag colours are read at render time, so a line already on screen keeps
+// whatever colour was in force when it was drawn. Lines replay before the
+// first `settings` message arrives, which means the opening scrollback is
+// always drawn with no colours at all -- hence the repaint below, gated on
+// the assignments actually having changed so unrelated settings traffic
+// doesn't repaint (and re-anchor) the view for nothing.
+function colourSignature() {
+  const parts = [];
+  for (const key of ["tells", "group"]) {
+    const s = settings.sources[key];
+    parts.push(key + ":" + (s && s.colour !== undefined ? s.colour : ""));
+  }
+  for (const [name, e] of Object.entries(settings.channels)) {
+    if (e && e.colour !== undefined) parts.push(name + ":" + e.colour);
+  }
+  return parts.sort().join("|");
+}
+let lastColourSignature = null;
 
 function switchTab(t) {
   const order = computeTabOrder();
   if (!order.includes(t)) return;
+  hideColourMenu();
   activeTab = t;
   view = "chat";
   scrollback.hidden = false;
@@ -420,6 +496,79 @@ function sendUpdate(delta) {
   panel.post("settings_update", delta);
 }
 
+function hideColourMenu() {
+  colourMenu.hidden = true;
+  colourMenu.replaceChildren();
+  colourMenu.dataset.owner = "";
+}
+
+// Identifies which swatch owns the open menu, so clicking that same swatch
+// again closes it instead of tearing down and rebuilding an identical list.
+let colourPickerSeq = 0;
+
+// A swatch button that opens the colour list. `current` is a slot or null;
+// `onPick` receives a slot or COLOUR_DEFAULT.
+function makeColourPicker(current, onPick) {
+  const btn = document.createElement("button");
+  btn.className = "settings-colour";
+  btn.title = "Tag colour";
+  btn.setAttribute("aria-label", "Tag colour");
+  const sw = document.createElement("span");
+  sw.className = "swatch";
+  sw.style.background = colourVar(current);
+  btn.appendChild(sw);
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    // Second click on the same swatch closes rather than reopening.
+    const id = String(btn.dataset.pickerId);
+    if (!colourMenu.hidden && colourMenu.dataset.owner === id) {
+      hideColourMenu();
+      return;
+    }
+    openColourMenu(btn, current, onPick);
+  });
+  btn.dataset.pickerId = String(++colourPickerSeq);
+  return btn;
+}
+
+function openColourMenu(anchorBtn, current, onPick) {
+  colourMenu.replaceChildren();
+  colourMenu.dataset.owner = String(anchorBtn.dataset.pickerId);
+
+  function addOption(slot, label) {
+    const row = document.createElement("button");
+    row.className = "colour-option"
+      + ((current === null ? COLOUR_DEFAULT : current) === slot ? " selected" : "");
+    const sw = document.createElement("span");
+    sw.className = "swatch";
+    sw.style.background = colourVar(slot);
+    row.appendChild(sw);
+    row.appendChild(document.createTextNode(label));
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+      hideColourMenu();
+      onPick(slot);
+    });
+    colourMenu.appendChild(row);
+  }
+
+  addOption(COLOUR_DEFAULT, "Default");
+  ANSI_COLOURS.forEach((name, slot) => addOption(slot, name));
+
+  colourMenu.hidden = false;
+  // Positioned after unhiding so the height is measurable: the list is tall,
+  // so flip it above the swatch when there isn't room below.
+  const r = anchorBtn.getBoundingClientRect();
+  const h = colourMenu.offsetHeight;
+  const below = window.innerHeight - r.bottom;
+  colourMenu.style.top = (below >= h || r.top < h)
+    ? `${Math.max(0, Math.min(r.bottom, window.innerHeight - h))}px`
+    : `${Math.max(0, r.top - h)}px`;
+  colourMenu.style.left =
+    `${Math.max(0, Math.min(r.left, window.innerWidth - colourMenu.offsetWidth))}px`;
+}
+
 function renderSourceRow(label, key) {
   const row = document.createElement("div");
   row.className = "settings-row source-row";
@@ -445,6 +594,12 @@ function renderSourceRow(label, key) {
   row.appendChild(sourceToggle("gag from main", "gag_main"));
   row.appendChild(sourceToggle("sound", "sound"));
   row.appendChild(sourceToggle("notify", "notify"));
+
+  const src = settings.sources[key] || {};
+  row.appendChild(makeColourPicker(
+    src.colour !== undefined ? src.colour : null,
+    (slot) => sendUpdate({ source: { [key]: { colour: slot } } })
+  ));
   return row;
 }
 
@@ -485,6 +640,11 @@ function renderChannelRow(name, entry) {
   toggles.appendChild(toggle("sound", "sound"));
   toggles.appendChild(toggle("notify", "notify"));
   row.appendChild(toggles);
+
+  row.appendChild(makeColourPicker(
+    entry.colour !== undefined ? entry.colour : null,
+    (slot) => sendUpdate({ channel: { name, colour: slot } })
+  ));
 
   const remove = document.createElement("button");
   remove.className = "settings-remove";
@@ -550,6 +710,9 @@ function ensureAddChannelRow() {
 }
 
 function renderSettings() {
+  // Every settings broadcast rebuilds these rows, which throws away the
+  // button the open menu is anchored to.
+  hideColourMenu();
   sourcesEl.replaceChildren();
   sourcesEl.appendChild(renderSourceRow("Tells", "tells"));
   sourcesEl.appendChild(renderSourceRow("Group", "group"));
@@ -602,6 +765,11 @@ panel.on("settings", (payload) => {
     }
   }
   renderTabs();
+  const sig = colourSignature();
+  if (sig !== lastColourSignature) {
+    lastColourSignature = sig;
+    if (view === "chat") rerenderActive({ keepScroll: true });
+  }
   if (view === "settings") renderSettings();
 });
 
@@ -625,11 +793,22 @@ panel.on("goto_last", () => {
 window.addEventListener("resize", () => renderTabs());
 
 document.addEventListener("click", (e) => {
+  if (!colourMenu.hidden && !colourMenu.contains(e.target)) hideColourMenu();
   if (overflowPopover.hidden) return;
   if (overflowPopover.contains(e.target)) return;
   if (e.target.classList && e.target.classList.contains("overflow")) return;
   hideOverflowPopover();
 });
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !colourMenu.hidden) hideColourMenu();
+});
+
+// The menu is positioned in viewport coordinates against a row that scrolls,
+// so anything that moves the row underneath it must close it rather than
+// leave it floating somewhere arbitrary.
+window.addEventListener("resize", hideColourMenu);
+settingsEl.addEventListener("scroll", hideColourMenu, true);
 
 renderTabs();
 
