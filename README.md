@@ -7,6 +7,7 @@ The panel is configurable via the gear icon on the right side, where
 you can add/remove tabs, and control per tab/channel settings for
 things like:
 
+- the colour of the channel's tag in the chat log
 - whether or not to play notification sounds
 - whether or not to show a desktop (OS) notification
 - whether or not to gag from the main output
