@@ -18,6 +18,7 @@ let view = "chat"; // "chat" or "settings"
 
 const tabsEl = document.getElementById("tabs");
 const scrollback = document.getElementById("scrollback");
+const linesEl = document.getElementById("lines");
 const settingsEl = document.getElementById("settings");
 const sourcesEl = document.getElementById("sources");
 const channelsEl = document.getElementById("channels");
@@ -192,8 +193,88 @@ function renderLine({ tab, channel, text, ts }) {
   return el;
 }
 
+// --- Tail pinning ------------------------------------------------------
+//
+// Following the newest line is *remembered intent*, not a measurement taken
+// at append time. Measuring at append time is what this used to do, and it
+// fails the moment anything moves the bottom out from under a scrollTop that
+// was correct when it was set:
+//
+//   - the panel is resized shorter, or narrowed so every line rewraps taller;
+//   - the host pushes the user's typography. Mallard serves plugin iframes a
+//     baseline of ui-monospace/13px/1.4 and corrects it per-iframe with a
+//     `set-typography` message shortly after ready (see the host's
+//     plugins/webview/panel_theme.rs), so anyone not on the defaults gets a
+//     full reflow just after mount — right when history replay has landed.
+//
+// Any of these leaves the distance-from-bottom above the threshold, and
+// because the old code only ever re-measured, every later line then read
+// "not pinned" and never scrolled again. The view was stuck until the user
+// dragged to the bottom by hand.
+//
+// Slack is ~2 lines at the default 13px/1.4 rather than a bare 16px, which
+// was less than a single line and so left no tolerance for subpixel drift.
+const PIN_SLACK_PX = 48;
+
 function isPinnedToBottom() {
-  return scrollback.scrollHeight - scrollback.scrollTop - scrollback.clientHeight < 16;
+  return scrollback.scrollHeight - scrollback.scrollTop - scrollback.clientHeight < PIN_SLACK_PX;
+}
+
+let pinned = true;
+
+function scrollToBottom() {
+  scrollback.scrollTop = scrollback.scrollHeight;
+}
+
+function repinIfPinned() {
+  if (pinned) scrollToBottom();
+}
+
+// Geometry as of the last scroll event, used to tell layout from intent below.
+let lastScrollHeight = scrollback.scrollHeight;
+let lastClientHeight = scrollback.clientHeight;
+function syncGeometry() {
+  lastScrollHeight = scrollback.scrollHeight;
+  lastClientHeight = scrollback.clientHeight;
+}
+
+// The user's own scrolling is the only thing that sets intent. A programmatic
+// scrollToBottom() also lands here and re-asserts pinned = true, which is right.
+//
+// A scroll event fired *because the geometry moved* is not intent, though, and
+// must not clear the pin. When the panel shrinks or the content rewraps, the
+// browser leaves scrollTop where it is while the bottom moves away from it, and
+// fires a scroll event describing that gap. Reading it as "the user scrolled up"
+// is precisely what made the unpin permanent — and it happens before the
+// ResizeObserver below gets a chance to correct it, so the observer alone is not
+// enough. Compare against the previous event: if scrollHeight or clientHeight
+// moved, this scroll is a consequence of layout, so re-assert the existing pin
+// instead of recomputing it.
+scrollback.addEventListener("scroll", () => {
+  const geometryMoved =
+    scrollback.scrollHeight !== lastScrollHeight ||
+    scrollback.clientHeight !== lastClientHeight;
+  syncGeometry();
+  if (geometryMoved) {
+    repinIfPinned();
+    return;
+  }
+  pinned = isPinnedToBottom();
+});
+
+// Two observers, because two different things move the bottom:
+//   - #scrollback resizing means the panel got taller, shorter or narrower;
+//   - #lines resizing means the same content now occupies a different height
+//     (rewrap at a new width, or a set-typography push changing font metrics).
+// A container-only observer misses the second, and WebKit — the shipped engine
+// on macOS and Linux — has no overflow-anchor to fall back on.
+if (typeof ResizeObserver !== "undefined") {
+  const observer = new ResizeObserver(() => {
+    syncGeometry();
+    repinIfPinned();
+  });
+  observer.observe(scrollback);
+  observer.observe(linesEl);
 }
 
 // Every line goes to "all". Channel lines route to "channels" (the master
@@ -276,24 +357,29 @@ function entryBelongsInTab(entry, tab) {
 function appendToActive(entry) {
   if (view !== "chat") return;
   if (!entryBelongsInTab(entry, activeTab)) return;
-  const wasPinned = isPinnedToBottom();
-  scrollback.appendChild(renderLine(entry));
-  while (scrollback.childElementCount > BUFFER_MAX) {
-    scrollback.removeChild(scrollback.firstElementChild);
+  linesEl.appendChild(renderLine(entry));
+  while (linesEl.childElementCount > BUFFER_MAX) {
+    linesEl.removeChild(linesEl.firstElementChild);
   }
-  if (wasPinned) scrollback.scrollTop = scrollback.scrollHeight;
+  repinIfPinned();
 }
 
 function rerenderActive({ keepScroll = false } = {}) {
   const prevTop = scrollback.scrollTop;
-  const wasPinned = isPinnedToBottom();
-  scrollback.replaceChildren();
+  const wasPinned = pinned;
+  linesEl.replaceChildren();
   const buf = buffers[activeTab] || [];
-  for (const e of buf) scrollback.appendChild(renderLine(e));
+  for (const e of buf) linesEl.appendChild(renderLine(e));
   // A tab switch always lands at the newest line. A repaint in place (a
   // colour change) keeps the reader where they were unless they were
   // already following the bottom.
-  scrollback.scrollTop = (keepScroll && !wasPinned) ? prevTop : scrollback.scrollHeight;
+  if (keepScroll && !wasPinned) {
+    scrollback.scrollTop = prevTop;
+    pinned = false;
+  } else {
+    scrollToBottom();
+    pinned = true;
+  }
 }
 
 let lastColourSignature = null;

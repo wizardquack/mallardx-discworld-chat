@@ -10,7 +10,11 @@
 </head>
 <body>
   <nav class="tabs" id="tabs" role="tablist"></nav>
-  <main class="scrollback" id="scrollback"></main>
+  <!-- Lines live in an inner wrapper so a ResizeObserver can watch the
+       *content* box independently of the scroll viewport. See the tail
+       pinning block in chat.js: rewrap and typography changes move the
+       bottom without resizing #scrollback at all. -->
+  <main class="scrollback" id="scrollback"><div id="lines"></div></main>
   <section class="settings" id="settings" hidden>
     <h2>Sources</h2>
     <div class="sources" id="sources"></div>

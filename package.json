@@ -1,0 +1,12 @@
+{
+  "name": "mallardx-discworld-chat",
+  "private": true,
+  "description": "Dev-only tooling for the Discworld Chat plugin's UI tests.",
+  "scripts": {
+    "test": "node tests/colour_test.js && node tests/tab_index_test.js && playwright test",
+    "test:ui": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0"
+  }
+}

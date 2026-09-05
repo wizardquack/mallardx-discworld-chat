@@ -14,6 +14,22 @@ things like:
 - whether or not to pina dedicated tab for the channel, or just
   capture in an aggregator tab like "Channels"
 
+## Tests
+
+```sh
+lua tests/classifier_test.lua      # and the other tests/*.lua — no deps
+node tests/colour_test.js          # pure JS helpers — no deps
+node tests/tab_index_test.js
+
+npm install && npm test            # the above JS tests plus the UI suite
+npx playwright test                # UI suite only (WebKit)
+```
+
+`tests/ui/` runs the real panel document under Playwright's WebKit against a
+stubbed panel SDK. WebKit only, deliberately: Mallard ships in a WKWebView /
+WebKitGTK shell, and the suite guards scroll reconciliation, where a Chromium
+pass would be misleading.
+
 ## Credit
 
 Many thanks to Quow and Oki, whose work on similar plugins was
