@@ -518,15 +518,20 @@ end)
 -- Incoming tell / asks / exclaims. The speaker is "<FirstName> <family name>",
 -- and family names are very free-form: any number of words, any case, with
 -- apostrophes and hyphens (e.g. "Fenrir the misspeler", "Gnillot in the
--- Darrke", "Dacrian didn't do-it", "Gin n Tonique"). So after the always-
--- capitalised first name we accept a run of further name words of any case via
+-- Darrke", "Dacrian didn't do-it", "Gin n Tonique"). So after the first name
+-- we accept a run of further name words of any case via
 -- `(?: [A-Za-z][\w'-]*)*`, then the verb and the framing "you:". The earlier
 -- form required every word past the name to be Capitalised, so live tells from
 -- titled players (the common case) were dropped before route_line ever ran.
 --
+-- The first name is `[A-Za-z]`, not `[A-Z]`, for the same reason: "sYa" and
+-- "badteeth" are real players, and requiring a capital dropped their tells
+-- before route_line ever ran. See classifier.is_incoming_tell for why the
+-- bare "you: " is the part actually holding NPC room speech out.
+--
 -- Must stay in sync with classifier.is_incoming_tell; tests/classifier_test.lua
 -- exercises the classifier against the full family-name set.
-mud.trigger([==[^[A-Z][\w'-]*(?: [A-Za-z][\w'-]*)* (?:tells|exclaims to|asks).+?you: ]==], function(m)
+mud.trigger([==[^[A-Za-z][\w'-]*(?: [A-Za-z][\w'-]*)* (?:tells|exclaims to|asks).+?you: ]==], function(m)
   if route_line(m.text) then m:gag() end
 end)
 

@@ -161,6 +161,31 @@ check_tell("outgoing tell: language clause after the target",
 check_tell("outgoing tell: family name starting with \"in\"",
   "You tell Gnillot in the Darrke: over here", false)
 
+-- A player's first name is not reliably capitalised. "sYa" and "badteeth" are
+-- real players from the Mallard wire logs whose tells were dropped outright
+-- while their channel chatter came through, because the discriminator anchored
+-- on `^[A-Z]`. ("dag" already appears below as an outgoing target, so the
+-- lowercase-name case was half-known.)
+check_tell("incoming tell: lowercase first name — sYa regression",
+  "sYa tells you: Join us for a sail? :)", true)
+
+check_tell("incoming asks: lowercase first name",
+  "sYa asks you: Wrangle or deck?", true)
+
+check_tell("incoming exclaims: all-lowercase name",
+  "badteeth exclaims to you: nothing too obscure I promise!", true)
+
+check_tell("incoming tell: all-lowercase name",
+  "dag tells you: :)", true)
+
+-- Multi-recipient tells. The MUD lists the other recipients before "and you",
+-- so the framing colon sits past a comma-separated name list.
+check_tell("incoming tell: multiple recipients",
+  "sYa tells Mazzy, Gib and you: sail? :)", true)
+
+check_tell("incoming tell: multiple recipients with a titled name",
+  "sYa tells AnthonyQVu Northstar, Herk and you: ready at Chid :)", true)
+
 -- Room says, not tells. Discworld picks the say verb from the sentence's
 -- punctuation, so a spoken question echoes with the same "ask" verb a tell
 -- uses; with a language selected it also gains an "in <Language>" clause that
@@ -205,6 +230,24 @@ check_not_chat("say in language: body contains a colon",
 
 check_not_chat("narrative: tell with no framing colon",
   "You tell Fenrir about the water room.")
+
+-- NPC speech directed at you. This is what actually keeps room NPCs out of the
+-- tells tab now that the speaker's first letter may be lowercase: Discworld
+-- frames NPC address with a language and accent clause, so the colon lands
+-- after that clause and never straight after "you". All four are real lines.
+check_not_chat("NPC: asks you in <language> with a <accent> accent",
+  "Klepton the Fixer asks you in Ephebian with a nautical Ephebian accent: Need any help?")
+
+check_not_chat("NPC: exclaims to you in <language>, lowercase-shaped subject",
+  "The shady pickpocket exclaims to you in Ephebian with an Ephebian accent: You're mine!")
+
+check_not_chat("NPC: two-word name, Morporkian",
+  "Mr Werks exclaims to you in Morporkian with a Morporkian accent: Good luck!")
+
+-- `help tell` documents the tell format with a worked example. It is indented,
+-- and the `^` anchor is the only thing holding it out of the tells tab.
+check_not_chat("help text: indented worked example from `help tell`",
+  "     Pinkfish tells you: bing")
 
 -- Data-driven coverage against the live family-name roster (captured from
 -- the MUD's "<family> was founded by <Founder> with <N> member(s)." listing).

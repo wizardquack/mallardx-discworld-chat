@@ -64,10 +64,20 @@ end
 -- remarkably free-form: it can be several words, lowercase, and contain
 -- apostrophes or hyphens (real examples: "Fenrir the misspeler", "Gnillot in
 -- the Darrke", "Being nude in public", "Dacrian didn't do-it", "Gin n
--- Tonique"). So after the always-capitalised first name we accept a lazy run
--- of word chars, spaces, apostrophes and hyphens up to the verb. `.-you: `
--- then requires the "you:" the MUD frames every directed tell with, which is
--- what keeps this from swallowing unrelated narrative.
+-- Tonique"). So after the first name we accept a lazy run of word chars,
+-- spaces, apostrophes and hyphens up to the verb. `.-you: ` then requires the
+-- "you:" the MUD frames every directed tell with, which is what keeps this
+-- from swallowing unrelated narrative.
+--
+-- The first name is NOT reliably capitalised either — "sYa" and "badteeth"
+-- are real players whose tells this dropped wholesale while their channel
+-- chatter came through fine. What carries the discrimination is the bare
+-- "you: ", not the case of the first letter: Discworld frames NPC speech
+-- directed at you with a language and accent clause first ("Klepton the Fixer
+-- asks you in Ephebian with a nautical Ephebian accent: Need any help?"), so
+-- room NPCs never produce a bare "you: " and stay out of the tells tab on
+-- their own. The `^` anchor does the rest — the worked example in `help tell`
+-- ("     Pinkfish tells you: bing") is indented, and so still ignored.
 --
 -- Keep this in sync with the live `mud.trigger` incoming-tell regex in
 -- main.lua — that Rust-regex pre-filter gates whether classify() ever runs,
@@ -75,9 +85,9 @@ end
 -- exercises both against the real family-name set.
 local function is_incoming_tell(line)
   if line:sub(1, 4) == "You " then return false end
-  return line:match("^[A-Z][%w '%-]- tells.-you: ")       ~= nil
-      or line:match("^[A-Z][%w '%-]- exclaims to.-you: ") ~= nil
-      or line:match("^[A-Z][%w '%-]- asks.-you: ")        ~= nil
+  return line:match("^[A-Za-z][%w '%-]- tells.-you: ")       ~= nil
+      or line:match("^[A-Za-z][%w '%-]- exclaims to.-you: ") ~= nil
+      or line:match("^[A-Za-z][%w '%-]- asks.-you: ")        ~= nil
 end
 
 -- Bracketed channel: "[name] X says: ..." where name is not say/tell/soul/path/empty.
