@@ -131,6 +131,81 @@ check_tell("incoming tell: single-letter family word",
 check_tell("incoming tell: outgoing echo is not incoming",
   "You tell Fenrir the misspeler: Hi!", false)
 
+check_tell("outgoing ask: named target",
+  "You ask Fenrir: where are you?", false)
+
+-- The outgoing echo reproduces the recipient's name as the user typed it, so
+-- an outgoing tell's target is NOT reliably capitalised. This is the real
+-- "You ask dag: meet at drum?" a case-based discriminator wrongly dropped.
+check_tell("outgoing ask: lowercase target",
+  "You ask dag: meet at drum?", false)
+
+check_tell("outgoing tell: lowercase target",
+  "You tell dag: on my way", false)
+
+check_tell("outgoing ask: free-form family name target",
+  "You ask Gin n Tonique: another round?", false)
+
+check_tell("outgoing exclaim: named target",
+  "You exclaim to Dacrian didn't do-it: oops!", false)
+
+check_tell("outgoing tell: adverb modifier",
+  "You totally tell Fenrir: hi", false)
+
+check_tell("outgoing tell: language clause after the target",
+  "You tell Fenrir in Dwarfish: hi", false)
+
+-- "in" only disqualifies a target when a capitalised word follows it, which
+-- is what a language clause looks like; a family name reading "in <lowercase>"
+-- is a real player and must still route.
+check_tell("outgoing tell: family name starting with \"in\"",
+  "You tell Gnillot in the Darrke: over here", false)
+
+-- Room says, not tells. Discworld picks the say verb from the sentence's
+-- punctuation, so a spoken question echoes with the same "ask" verb a tell
+-- uses; with a language selected it also gains an "in <Language>" clause that
+-- used to be mistaken for the recipient's name. The discriminator is
+-- structural — a target is never "in" followed by a capitalised word — so no
+-- list of Discworld languages is involved, and these stay rejected when the
+-- MUD adds one.
+local function check_not_chat(label, line)
+  local r = classifier.classify(line, nil)
+  if r == nil then
+    io.write("ok   " .. label .. "\n")
+  else
+    failures = failures + 1
+    io.write(string.format("FAIL %s\n     got  = {tab=%q}\n     want = nil\n",
+      label, tostring(r.tab)))
+  end
+end
+
+-- Every language currently in the game, to prove the structural rule covers
+-- the whole set without naming any of them.
+for _, lang in ipairs({ "Agatean", "Brindisian", "Djelian", "Dwarfish",
+                        "Ephebian", "Grunt", "Klatchian", "Morporkian",
+                        "Uberwaldean", "Wizard Spells" }) do
+  check_not_chat("say in " .. lang,
+    "You ask in " .. lang .. ": What alternatives did I have?")
+end
+
+check_not_chat("say in language: exclaim form",
+  "You exclaim in Morporkian: Look out!")
+
+check_not_chat("say in language: statement form",
+  "You say in Morporkian: I have no idea.")
+
+check_not_chat("say in language: adverb modifier",
+  "You totally ask in Morporkian: What alternatives did I have?")
+
+check_not_chat("say: bare question, no language",
+  "You ask: What alternatives did I have?")
+
+check_not_chat("say in language: body contains a colon",
+  "You ask in Klatchian: Which way: left or right?")
+
+check_not_chat("narrative: tell with no framing colon",
+  "You tell Fenrir about the water room.")
+
 -- Data-driven coverage against the live family-name roster (captured from
 -- the MUD's "<family> was founded by <Founder> with <N> member(s)." listing).
 -- The wire speaker token is "<Founder> <family>"; every family must route a

@@ -16,13 +16,46 @@ local M = {}
 -- Outgoing tell: "You tell Bob:", "You exclaim to Bob:", "You ask Bob:".
 -- The `%a+ ` alternative also accepts an adverb modifier Discworld inserts
 -- between "You" and the verb in certain states ("You totally tell Bob: ...").
+--
+-- The verb alone is NOT enough to identify a tell: Discworld picks the say
+-- verb from the sentence's punctuation, so a plain question spoken out loud
+-- comes back as "You ask: ...?" — and with a language selected, as
+--   "You ask in Morporkian: What alternatives did I have?"
+-- which is a room say, not a tell. What separates the two is the *target*
+-- between the verb and the framing ": ".
+--
+-- We can't lean on capitalisation to tell a target from a language clause:
+-- the outgoing echo reproduces the recipient's name as the user typed it, so
+-- "You ask dag: meet at drum?" is a perfectly ordinary tell. What a target
+-- can never be is an "in <Language>" clause — a first name of literally "in"
+-- followed by a capitalised family word — so that shape, and only that shape,
+-- is rejected. Deliberately no list of Discworld languages: "in" plus a
+-- capital is the structural marker, and it keeps working when the MUD adds a
+-- language. (A lowercase family name after a real "in" — "in the Darrke" —
+-- still routes as a tell, since languages are always capitalised.)
+--
+-- The target must also be name-shaped: word characters, spaces, apostrophes
+-- and hyphens, the same free-form family-name charset is_incoming_tell
+-- accepts (real examples: "Gin n Tonique", "Dacrian didn't do-it"). That
+-- keeps a say whose body happens to contain ": " from looking like a target,
+-- and still admits a tell sent in a language ("You tell Bob in Dwarfish:"),
+-- whose target begins with the recipient's name rather than "in".
+local function target_is_named(rest)
+  if rest == nil then return false end
+  local target = rest:match("^([%w '%-]+): ")
+  if not target then return false end
+  if target:match("^in %u") then return false end
+  return true
+end
+
 local function is_outgoing_tell(line)
-  return line:match("^You [Tt]ell ")        ~= nil
-      or line:match("^You %a+ [Tt]ell ")    ~= nil
-      or line:match("^You exclaim to ")     ~= nil
-      or line:match("^You %a+ exclaim to ") ~= nil
-      or line:match("^You ask ")            ~= nil
-      or line:match("^You %a+ ask ")        ~= nil
+  local rest = line:match("^You [Tt]ell (.+)$")
+            or line:match("^You %a+ [Tt]ell (.+)$")
+            or line:match("^You exclaim to (.+)$")
+            or line:match("^You %a+ exclaim to (.+)$")
+            or line:match("^You ask (.+)$")
+            or line:match("^You %a+ ask (.+)$")
+  return target_is_named(rest)
 end
 
 -- Incoming tell: "Alice tells you:", "Bob exclaims to you:", "Carol asks you:".

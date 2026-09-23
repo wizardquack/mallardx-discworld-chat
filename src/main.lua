@@ -497,8 +497,21 @@ mud.trigger([==[^\*\* [A-Za-z]+ [A-Za-z]+ \d+ \d+:\d+:\d+ \d{4} \[[^\]]+\] \*\*$
   htell_replay_pending = true
 end)
 
--- Outgoing tell / ask / exclaim
-mud.trigger([==[^You (?:[A-Za-z]+ )?(?:tell |exclaim to |ask ).+?: ]==], function(m)
+-- Outgoing tell / ask / exclaim.
+--
+-- This is a deliberate *superset* pre-filter, not the discriminator: it only
+-- decides whether route_line runs, and classifier.is_outgoing_tell makes the
+-- real call (a line it rejects never gets gagged or posted). That split
+-- matters here because the say/tell ambiguity needs a negative condition —
+-- Discworld derives the say verb from the punctuation, so a spoken question
+-- echoes as "You ask in Morporkian: ..." and only the *absence* of an
+-- "in <Language>" target marks a real tell — and the regex crate has no
+-- lookaround to express it. What the pre-filter can cheaply require is the
+-- name-shaped target the classifier also requires, which is why this is
+-- `[\w '-]+: ` rather than a bare `.+?: `.
+--
+-- Must stay a superset of classifier.is_outgoing_tell.
+mud.trigger([==[^You (?:[A-Za-z]+ )?(?:tell |exclaim to |ask )[\w '-]+: ]==], function(m)
   if route_line(m.text) then m:gag() end
 end)
 
