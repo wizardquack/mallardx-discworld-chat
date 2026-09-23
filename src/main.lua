@@ -530,14 +530,22 @@ mud.trigger([==[^[A-Z][\w'-]*(?: [A-Za-z][\w'-]*)* (?:tells|exclaims to|asks).+?
   if route_line(m.text) then m:gag() end
 end)
 
--- Bracketed channel (any [name] line with letters following)
-mud.trigger([==[^\[[^\]]+\] [A-Za-z]{3,}]==], function(m)
+-- Bracketed channel (any [name] line whose body starts with a letter).
+--
+-- One letter, not Quow's three: a three-letter minimum drops any line whose
+-- first body word is shorter, which on the wire means real traffic — the
+-- speaker "M Mirrour", and the MUD's own "[Sailors] By the power vested in
+-- Lyna, ..." leadership announcements. classifier.bracketed_channel carries
+-- the full rationale; keep the two in sync.
+mud.trigger([==[^\[[^\]]+\] [A-Za-z]]==], function(m)
   if route_line(m.text) then m:gag() end
 end)
 
 -- Parens channel (talkers like (One), (Two), club channels) — always
 -- routes to channels tab. Group says use square brackets per Quow.
-mud.trigger([==[^\([^)]+\) [A-Za-z]{3,}]==], function(m)
+-- Same one-letter body rule as the bracketed trigger above; talker bots are
+-- where it bites, since they speak under a title ("(Quiz) Mr Quiz wisps:").
+mud.trigger([==[^\([^)]+\) [A-Za-z]]==], function(m)
   if route_line(m.text) then m:gag() end
 end)
 

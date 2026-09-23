@@ -343,6 +343,103 @@ for family, founder in FAMILY_ROSTER:gmatch("([^\n]-) was founded by (%a+) with"
 end
 check("roster: parsed expected number of families", roster_count, 119)
 
+-- Channel routing. The body guard used to demand three leading letters (an
+-- arbitrary threshold inherited from Quow's "followed by some letters"), so
+-- any line whose first body word was shorter vanished from the panel — most
+-- visibly the talker bots, which speak under a title.
+local function check_channel(label, line, group, want_tab, want_channel, want_incoming)
+  local r = classifier.classify(line, group)
+  local ok = type(r) == "table"
+      and r.tab == want_tab
+      and r.channel == want_channel
+      and r.incoming == want_incoming
+  if ok then
+    io.write("ok   " .. label .. "\n")
+  else
+    failures = failures + 1
+    local got = type(r) == "table"
+      and string.format("{tab=%q, channel=%q, incoming=%s}",
+            tostring(r.tab), tostring(r.channel), tostring(r.incoming))
+      or tostring(r)
+    io.write(string.format("FAIL %s\n     got  = %s\n     want = {tab=%q, channel=%q, incoming=%s}\n",
+      label, got, want_tab, want_channel, tostring(want_incoming)))
+  end
+end
+
+check_channel("parens channel: ordinary speaker",
+  "(One) Dacrian wisps: evening all", nil, "channels", "One", true)
+
+-- The reported regression: Discworld's quiz bot is named "Mr Quiz", so every
+-- line it wisps opens on a two-letter word and was dropped wholesale.
+check_channel("parens channel: two-letter first word — Mr Quiz regression",
+  "(Quiz) Mr Quiz wisps: 9 seconds left.", nil, "channels", "Quiz", true)
+
+check_channel("parens channel: two-letter first word, apostrophe body",
+  "(Quiz) Mr Quiz wisps: Time's up!", nil, "channels", "Quiz", true)
+
+check_channel("parens channel: two-letter first word, quoted body",
+  "(Quiz) Mr Quiz wisps: The correct answer was \"CHARLIE DON'T SURF\"",
+  nil, "channels", "Quiz", true)
+
+check_channel("parens channel: quiz bot announcement, no speaker verb colon in body",
+  "(Quiz) Mr Quiz wisps: Welcome to Taffyd's Trivia.", nil, "channels", "Quiz", true)
+
+check_channel("parens channel: quiz bot, body opens on a hint mask",
+  "(Quiz) Mr Quiz wisps: Hint: C**** F******", nil, "channels", "Quiz", true)
+
+check_channel("parens channel: single-letter first word",
+  "(One) M Mirrour wisps: hi", nil, "channels", "One", true)
+
+check_channel("parens channel: own utterance is not incoming",
+  "(One) You wisp: hi", nil, "channels", "One", false)
+
+check_channel("bracketed channel: ordinary speaker",
+  "[Wizards] Lyna says: hi", nil, "channels", "Wizards", true)
+
+-- Real log line: a group leadership announcement, whose body opens on "By".
+check_channel("bracketed channel: two-letter first word — leader announcement",
+  "[Sailors] By the power vested in Lyna, Kiki has been appointed as the new leader of the group.",
+  nil, "channels", "Sailors", true)
+
+check_channel("bracketed channel: single-letter speaker — M Mirrour",
+  "[Sailors] M Mirrour has been invited by Lyna.", nil, "channels", "Sailors", true)
+
+check_channel("bracketed channel: group channel routes to group tab",
+  "[Sailors] Mr Quiz says: hi", "Sailors", "group", "Sailors", true)
+
+check_channel("bracketed channel: own utterance is not incoming",
+  "[Wizards] You say: hi", nil, "channels", "Wizards", false)
+
+-- Things that share the channel shape but are not chat. The one-letter guard
+-- is what still turns these away: their bodies open on punctuation or a digit
+-- (all four are real lines captured from the MUD / client scrollback).
+check_not_chat("inventory listing: body opens on a colon",
+  "(under) : a black backpack, some smuggler's lingerie.")
+
+check_not_chat("achievement listing: body opens on a colon",
+  "[1073] : There's Always A Catch.")
+
+check_not_chat("todo listing: body opens on a digit",
+  "[X] 250 bonus fi.un.gr")
+
+check_not_chat("goal listing: empty-ish bracket tag is excluded",
+  "[ ] Learn to do pottery")
+
+check_not_chat("path channel: slash-prefixed tag is excluded",
+  "[/path] Lyna says: hi")
+
+check_not_chat("say is not a channel", "[say] Lyna says: hi")
+check_not_chat("tell is not a channel", "[tell] Lyna tells: hi")
+check_not_chat("soul is not a channel", "[soul] Lyna smiles")
+
+-- Club-channel scrollback replayed on connect. Still rejected now that a
+-- two-letter speaker can pass the body guard.
+check_not_chat("club replay: timestamped tag is scrollback, not live",
+  "(The Unsinkables May 27 09:10 PDT) aVocado: sol doesnt exist atm")
+
+check_not_chat("club replay: two-letter first word in a replayed line",
+  "(The Unsinkables May 30 06:41 PDT) Mr Quiz wisps: hi")
+
 -- Non-events
 check("non-event: regular group say returns nil",
   classifier.parse_group_event("[Sailors] Lyna: is he coming?"),

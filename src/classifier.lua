@@ -81,8 +81,29 @@ local function is_incoming_tell(line)
 end
 
 -- Bracketed channel: "[name] X says: ..." where name is not say/tell/soul/path/empty.
+--
+-- The body only has to *begin* with a letter. Quow's original demanded three
+-- ("pretty much anything in square brackets followed by some letters"), an
+-- arbitrary threshold that silently dropped every line whose first body word
+-- is one or two letters: a speaker named "M Mirrour", and Discworld's own
+-- group announcements ("[Sailors] By the power vested in Lyna, Kiki has been
+-- appointed as the new leader of the group."). One letter still earns its
+-- keep — the bracketed non-chat the MUD and client listings emit opens on
+-- punctuation or a digit ("[1073] : There's Always A Catch.", "[X] 250 bonus
+-- fi.un.gr"), so requiring a letter rejects it without guessing at word
+-- lengths.
+--
+-- Known and accepted false positive: the Djelibeybi bazaar renders a market
+-- stall inside its room description as "[embroidery] An eye-catching burgundy
+-- tent sits boldly here." — same shape, not chat. Two such lines in 2.5M lines
+-- of wire log, and nothing separates them structurally from a real group
+-- announcement ("[sailing] The current leader has left the group."), which is
+-- prose in the same voice. Leaving them in costs a stray Channels line and a
+-- junk registry entry; they are not gagged, since new channels default to
+-- gag_main = false. That is the cheaper error: every guard that has tried to
+-- out-guess this shape so far has silently eaten real chat instead.
 local function bracketed_channel(line)
-  local ch = line:match("^%[([^%]]+)%] [A-Za-z][A-Za-z][A-Za-z]")
+  local ch = line:match("^%[([^%]]+)%] %a")
   if not ch then return nil end
   if ch == "say" or ch == "tell" or ch == "soul" or ch == " " then return nil end
   if ch:sub(1, 1) == "/" then return nil end
@@ -92,13 +113,20 @@ end
 -- Parens channel: "(name) X verb: ..." — same shape as bracketed
 -- but with parens. No exclusion list (no `(say)` etc. that we know of).
 --
+-- One leading letter in the body, for the reasons in bracketed_channel.
+-- Talkers are exactly where short first words turn up, because the bots
+-- speaking on them are titled: "(Quiz) Mr Quiz wisps: Time's up!" was
+-- invisible to the panel under the old three-letter rule. The letter still
+-- turns away the inventory listing that shares this shape, since its body
+-- opens on a colon ("(under) : a black backpack, ...").
+--
 -- Skips replayed history: when a player connects, the MUD redisplays
 -- recent club chat with a timestamp inside the parens, e.g.
 --   "(The Unsinkables May 27 09:10 PDT) aVocado: sol doesnt exist atm"
 -- — these are scrollback, not live, and shouldn't be re-posted into
 -- the chat panel.
 local function parens_channel(line)
-  local content = line:match("^%(([^%)]+)%) [A-Za-z][A-Za-z][A-Za-z]")
+  local content = line:match("^%(([^%)]+)%) %a")
   if not content then return nil end
   -- " Mon DD HH:MM TZ" suffix marks a replayed-history line. Day may
   -- be space-padded for single digits ("Jun  4"), so allow ` +`. TZ
