@@ -36,13 +36,15 @@ local M = {}
 --
 -- The target must also be name-shaped: word characters, spaces, apostrophes
 -- and hyphens, the same free-form family-name charset is_incoming_tell
--- accepts (real examples: "Gin n Tonique", "Dacrian didn't do-it"). That
+-- accepts (real examples: "Gin n Tonique", "Dacrian didn't do-it"), plus
+-- commas, since a multi-recipient tell echoes its targets as a list
+-- ("You tell Syacelion, Lyna and Mazzy: ..."). That
 -- keeps a say whose body happens to contain ": " from looking like a target,
 -- and still admits a tell sent in a language ("You tell Bob in Dwarfish:"),
 -- whose target begins with the recipient's name rather than "in".
 local function target_is_named(rest)
   if rest == nil then return false end
-  local target = rest:match("^([%w '%-]+): ")
+  local target = rest:match("^([%w ',%-]+): ")
   if not target then return false end
   if target:match("^in %u") then return false end
   return true

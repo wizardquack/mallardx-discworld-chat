@@ -508,10 +508,11 @@ end)
 -- "in <Language>" target marks a real tell — and the regex crate has no
 -- lookaround to express it. What the pre-filter can cheaply require is the
 -- name-shaped target the classifier also requires, which is why this is
--- `[\w '-]+: ` rather than a bare `.+?: `.
+-- `[\w ',-]+: ` rather than a bare `.+?: ` (the comma admits a
+-- multi-recipient target list, "You tell Syacelion, Lyna and Mazzy: ...").
 --
 -- Must stay a superset of classifier.is_outgoing_tell.
-mud.trigger([==[^You (?:[A-Za-z]+ )?(?:tell |exclaim to |ask )[\w '-]+: ]==], function(m)
+mud.trigger([==[^You (?:[A-Za-z]+ )?(?:tell |exclaim to |ask )[\w ',-]+: ]==], function(m)
   if route_line(m.text) then m:gag() end
 end)
 

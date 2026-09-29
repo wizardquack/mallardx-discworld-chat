@@ -152,6 +152,14 @@ check_tell("outgoing exclaim: named target",
 check_tell("outgoing tell: adverb modifier",
   "You totally tell Fenrir: hi", false)
 
+-- Multi-recipient outgoing tell: the echo lists every target, comma-separated,
+-- before the framing colon. Real line that was dropped.
+check_tell("outgoing tell: multiple recipients",
+  "You tell Syacelion, Lyna and Mazzy: kiki and just stormed, so i am still on cd", false)
+
+check_tell("outgoing ask: multiple recipients",
+  "You ask sYa, Gib and Herk: ready?", false)
+
 check_tell("outgoing tell: language clause after the target",
   "You tell Fenrir in Dwarfish: hi", false)
 
